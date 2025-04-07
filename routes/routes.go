@@ -18,9 +18,26 @@ func SetupRouter(r *gin.Engine) {
 		mahasiswa.POST("/", controllers.CreateBimbingan)
 		mahasiswa.DELETE("/:id", controllers.DeleteBimbingan)
 	}
-	// dosen := r.Group("/dosen")
-	// dosen.Use(middleware.InternalAuthMiddleware())
-	// {
-	//     dosen.GET("/jadwal", controllers.GetJadwalDosen)
-	// }
+	
+}
+func RoleRoutes(r *gin.Engine) {
+	roleGroup := r.Group("/roles")
+	{
+		roleGroup.POST("/", controllers.CreateRole)
+		roleGroup.GET("/", controllers.GetRoles)
+		roleGroup.GET("/:id", controllers.GetRoleByID)
+		roleGroup.PUT("/:id", controllers.UpdateRole)
+		roleGroup.DELETE("/:id", controllers.DeleteRole)
+	}
+}
+func DosenRoleRoutes(r *gin.Engine) {
+	roleGroup := r.Group("/dosenroles")
+	{
+		roleGroup.POST("/", controllers.CreateDosenRoles)
+		roleGroup.GET("/", controllers.GetDosenroles)
+		roleGroup.PUT("/:id", controllers.UpdateDosenrole)
+		roleGroup.DELETE("/:id", controllers.DeleteDosenRole)
+		roleGroup.GET("/prodi/:prodi", controllers.GetDosenRolesByProdi)
+		roleGroup.GET("/:id", controllers.GetDosenRolesByid)
+	}
 }

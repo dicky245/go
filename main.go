@@ -16,6 +16,9 @@ func main() {
 
 	r := gin.Default()
 	routes.SetupRouter(r)
+	routes.RoleRoutes(r)
+	routes.DosenRoleRoutes(r)
+	
 
 	port := "8080"
 	fmt.Println("Server berjalan di http://localhost:" + port)
