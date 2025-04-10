@@ -13,7 +13,7 @@ type DosenRoleRequest struct {
 	UserID     uint     `json:"user_id"`
 	Prodi      string   `json:"prodi"`
 	NamaDosen  string   `json:"nama_dosen"`
-	Tingkat    uint     `json:"tingkat"`
+	JenisPA    string     `json:"jenis_pa"`
 	RoleID    uint   `json:"role_id"`
 	NamaRole  string `json:"nama_role"` // Sesuai jumlah role_ids
 }
@@ -30,7 +30,7 @@ func CreateDosenRoles(c *gin.Context) {
 	// Cek apakah data role sudah ada sebelumnya
 	var exists model.DosenRole
 	if err := config.DB.
-		Where("user_id = ? AND prodi = ? AND tingkat = ? AND role_id = ?", req.UserID, req.Prodi, req.Tingkat, req.RoleID).
+		Where("user_id = ? AND prodi = ? AND jenis_pa = ? AND role_id = ?", req.UserID, req.Prodi, req.JenisPA, req.RoleID).
 		First(&exists).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "Role sudah ada"})
 		return
@@ -43,7 +43,7 @@ func CreateDosenRoles(c *gin.Context) {
 		RoleID:    req.RoleID,
 		NamaRole:  req.NamaRole,
 		Prodi:     req.Prodi,
-		Tingkat:   req.Tingkat,
+		JenisPA:   req.JenisPA,
 	}
 
 	if err := config.DB.Create(&dosenRole).Error; err != nil {
@@ -94,7 +94,7 @@ func UpdateDosenrole(c *gin.Context) {
 	dosenRole.Prodi = req.Prodi
 	dosenRole.NamaDosen = req.NamaDosen
 	dosenRole.NamaRole = req.NamaRole
-	dosenRole.Tingkat =req.Tingkat
+	dosenRole.JenisPA =req.JenisPA
 
 	// **Simpan perubahan**
 	config.DB.Save(&dosenRole)	

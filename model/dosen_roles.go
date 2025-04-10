@@ -7,7 +7,7 @@ type DosenRole struct {
 	RoleID     uint   `json:"role_id"`
 	NamaRole   string `json:"nama_role"`
 	Prodi      string `json:"prodi"`
-	Tingkat    uint   `json:"tingkat"`
+	JenisPA    string   `json:"jenis_pa"`
 }
 
 func (DosenRole) TableName() string {
