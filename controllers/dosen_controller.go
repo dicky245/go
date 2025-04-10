@@ -10,54 +10,53 @@ import (
 )
 	
 type DosenRoleRequest struct {
-	UserID  uint   `json:"user_id"`
-	Prodi   string   `json:"prodi"`
-	Tingkat uint     `json:"tingkat"`
-	RoleIDs []uint `json:"role_ids"`
+	UserID     uint     `json:"user_id"`
+	Prodi      string   `json:"prodi"`
+	NamaDosen  string   `json:"nama_dosen"`
+	Tingkat    uint     `json:"tingkat"`
+	RoleID    uint   `json:"role_id"`
+	NamaRole  string `json:"nama_role"` // Sesuai jumlah role_ids
 }
 
 func CreateDosenRoles(c *gin.Context) {
 	var req DosenRoleRequest
 
-	// Bind JSON ke struct
+	// Ambil input JSON dari request
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	var createdRoles []model.DosenRole // Menyimpan data yang berhasil dibuat
+	// Cek apakah data role sudah ada sebelumnya
+	var exists model.DosenRole
+	if err := config.DB.
+		Where("user_id = ? AND prodi = ? AND tingkat = ? AND role_id = ?", req.UserID, req.Prodi, req.Tingkat, req.RoleID).
+		First(&exists).Error; err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Role sudah ada"})
+		return
+	}
 
-	for _, roleID := range req.RoleIDs {
-		dosenRole := model.DosenRole{
-			UserID: req.UserID,
-			Prodi: req.Prodi,
-			Tingkat: req.Tingkat,
-			RoleID: roleID,
-		}
+	// Simpan ke database
+	dosenRole := model.DosenRole{
+		UserID:    req.UserID,
+		NamaDosen: req.NamaDosen,
+		RoleID:    req.RoleID,
+		NamaRole:  req.NamaRole,
+		Prodi:     req.Prodi,
+		Tingkat:   req.Tingkat,
+	}
 
-		// Cek apakah kombinasi user_id + role_id sudah ada
-		var exists model.DosenRole
-		if err := config.DB.
-			Where("user_id = ? AND prodi = ? AND tingkat = ? AND role_id = ?", req.UserID, req.Prodi,req.Tingkat, roleID).
-			First(&exists).Error; err == nil {
-			// Skip jika sudah ada
-			continue
-		}
-
-		// Simpan ke database
-		if err := config.DB.Create(&dosenRole).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		createdRoles = append(createdRoles, dosenRole)
+	if err := config.DB.Create(&dosenRole).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "Roles berhasil ditambahkan",
-		"data":    createdRoles,
+		"message": "Role berhasil ditambahkan",
+		"data":    dosenRole,
 	})
 }
+
 
 // Get All Roles
 func GetDosenroles(c *gin.Context) {
@@ -93,10 +92,12 @@ func UpdateDosenrole(c *gin.Context) {
 	dosenRole.UserID = req.UserID
 	dosenRole.RoleID = req.RoleID
 	dosenRole.Prodi = req.Prodi
+	dosenRole.NamaDosen = req.NamaDosen
+	dosenRole.NamaRole = req.NamaRole
 	dosenRole.Tingkat =req.Tingkat
 
 	// **Simpan perubahan**
-	config.DB.Save(&dosenRole)
+	config.DB.Save(&dosenRole)	
 	c.JSON(http.StatusOK, gin.H{"message": "Role updated", "data": dosenRole})
 }
 

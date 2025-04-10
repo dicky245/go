@@ -18,6 +18,7 @@ func main() {
 	routes.SetupRouter(r)
 	routes.RoleRoutes(r)
 	routes.DosenRoleRoutes(r)
+	routes.KelompokRoutes(r)
 	
 
 	port := "8080"

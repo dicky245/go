@@ -41,3 +41,13 @@ func DosenRoleRoutes(r *gin.Engine) {
 		roleGroup.GET("/:id", controllers.GetDosenRolesByid)
 	}
 }
+func KelompokRoutes(r *gin.Engine) {
+	roleGroup := r.Group("/kelompok")
+	{
+		roleGroup.POST("/", controllers.CreateKelompok)
+		roleGroup.GET("/", controllers.GetKelompok)
+		roleGroup.PUT("/:id", controllers.UpdateKelompok)
+		roleGroup.DELETE("/:id", controllers.DeleteKelompok)
+		roleGroup.GET("/:id", controllers.GetKelompokByID)
+	}
+}
