@@ -18,7 +18,30 @@ func SetupRouter(r *gin.Engine) {
 		mahasiswa.POST("/", controllers.CreateBimbingan)
 		mahasiswa.DELETE("/:id", controllers.DeleteBimbingan)
 	}
-	
+	pengumuman := r.Group("/pengumuman")
+	pengumuman.Use(middleware.InternalAuthMiddleware())
+	{
+		pengumuman.GET("/", controllers.GetPengumuman)
+		pengumuman.GET("/:id", controllers.GetPengumumanByID)
+		pengumuman.POST("/", controllers.CreatePengumuman)
+		pengumuman.DELETE("/:id", controllers.DeletePengumuman)
+	}
+
+	approve := r.Group("/approve")
+	approve.Use(middleware.InternalAuthMiddleware())
+	{
+		approve.GET("/", controllers.GetUpdateBimbingan)
+		approve.GET("/:id", controllers.GetUpdateBimbinganByID)
+		approve.PUT("/:id", controllers.UpdateRequestBimbingan)
+	}
+	jadwal := r.Group("/jadwal")
+	jadwal.Use(middleware.InternalAuthMiddleware())
+	{
+		jadwal.GET("/", controllers.GetJadwal)
+		jadwal.GET("/:id", controllers.GetJadwalByID)
+		jadwal.POST("/", controllers.CreateJadwal)
+	}
+
 }
 func RoleRoutes(r *gin.Engine) {
 	roleGroup := r.Group("/roles")
