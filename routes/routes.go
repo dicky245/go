@@ -41,6 +41,25 @@ func SetupRouter(r *gin.Engine) {
 		jadwal.GET("/:id", controllers.GetJadwalByID)
 		jadwal.POST("/", controllers.CreateJadwal)
 	}
+	pengumpulan := r.Group("/pengumpulan")
+	pengumpulan.Use(middleware.InternalAuthMiddleware())
+	{
+		pengumpulan.GET("/", controllers.GetPengumpulan)
+		pengumpulan.GET("/:id", controllers.GetPengumpulanByID)
+		pengumpulan.POST("/", controllers.CreatePengumpulan)
+		pengumpulan.DELETE("/:id", controllers.DeletePengumpulan)
+	}
+
+	artefak := r.Group("/artefak")
+	artefak.Use(middleware.InternalAuthMiddleware())
+	{
+		artefak.GET("/", controllers.GetArtefak)
+		artefak.GET("/:id", controllers.GetArtefakByID)
+		artefak.POST("/", controllers.CreateArtefak)
+		artefak.DELETE("/:id", controllers.DeleteArtefak)
+		artefak.GET("/submitan", controllers.GetSubmitMahasiswa)
+
+	}
 
 }
 func RoleRoutes(r *gin.Engine) {
