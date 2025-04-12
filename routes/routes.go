@@ -49,7 +49,7 @@ func SetupRouter(r *gin.Engine) {
 		pengumpulan.POST("/", controllers.CreatePengumpulan)
 		pengumpulan.DELETE("/:id", controllers.DeletePengumpulan)
 	}
-
+	// artefak
 	artefak := r.Group("/artefak")
 	artefak.Use(middleware.InternalAuthMiddleware())
 	{

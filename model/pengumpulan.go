@@ -1,5 +1,6 @@
 package model
 
+// model submitan
 import "time"
 
 type Submit struct {
