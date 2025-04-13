@@ -1,6 +1,5 @@
 package model
 
-// model submitan
 import "time"
 
 type Submit struct {
@@ -10,7 +9,7 @@ type Submit struct {
 	File      string    `json:"file" gorm:"column:file"`
 	Batas     string    `json:"batas" gorm:"column:batas"`
 	UserID    uint      `json:"user_id" gorm:"column:user_id"`
-	User      User      `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	User      User      `gorm:"foreignKey:UserID;references:ID" json:"user,omitempty"`
 	CreatedAt time.Time `json:"created_at" gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
 	Artefaks  []Artefak `gorm:"foreignKey:SubmitID" json:"artefaks,omitempty"`

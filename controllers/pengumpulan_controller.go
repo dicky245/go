@@ -1,61 +1,20 @@
 package controllers
 
-// controller submit
 import (
 	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/rudychandra/lagi/config"
 	"github.com/rudychandra/lagi/model"
 )
 
-func GetPengumpulan(c *gin.Context) {
-	db := config.DB
-
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User tidak ditemukan dalam token"})
-		return
-	}
-
-	var pengumpulanList []model.Submit
-	if err := db.Where("user_id = ?", userID.(uint)).Find(&pengumpulanList).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-	}
-	c.JSON(http.StatusOK, pengumpulanList)
-}
-
-func GetPengumpulanByID(c *gin.Context) {
-	db := config.DB
-	id := c.Param("id")
-
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User tidak ditemukan dalam token"})
-		return
-	}
-
-	var pengumpulan model.Submit
-	if err := db.Where("submit_id = ? AND user_id = ?", id, userID).First(&pengumpulan).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Pengumpulan tidak ditemukan atau bukan milik Anda"})
-		return
-	}
-
-	c.JSON(http.StatusOK, pengumpulan)
-}
-
+// CREATE - Dosen buat pengumpulan
 func CreatePengumpulan(c *gin.Context) {
 	db := config.DB
 	var newPengumpulan model.Submit
 
 	userID, exists := c.Get("user_id")
 	role, roleExists := c.Get("user_role")
-	if !exists || !roleExists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User tidak ditemukan dalam token"})
-		return
-	}
-
-	if role != "Dosen" {
+	if !exists || !roleExists || role != "Dosen" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Hanya Dosen yang dapat memberi pengumpulan"})
 		return
 	}
@@ -75,6 +34,48 @@ func CreatePengumpulan(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "Pengumpulan berhasil ditambahkan", "data": newPengumpulan})
 }
 
+// READ - Semua user bisa lihat pengumpulan
+func GetPengumpulan(c *gin.Context) {
+	db := config.DB
+	userID, exists := c.Get("user_id")
+	role, _ := c.Get("user_role")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	var pengumpulanList []model.Submit
+	var err error
+
+	if role == "Dosen" {
+		err = db.Where("user_id = ?", userID).Find(&pengumpulanList).Error
+	} else if role == "Mahasiswa" {
+		err = db.Find(&pengumpulanList).Error
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, pengumpulanList)
+}
+
+// READ BY ID - Semua user bisa lihat pengumpulan spesifik
+func GetPengumpulanByID(c *gin.Context) {
+	db := config.DB
+	id := c.Param("id")
+
+	var pengumpulan model.Submit
+	if err := db.Where("submit_id = ?", id).First(&pengumpulan).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Pengumpulan tidak ditemukan"})
+		return
+	}
+
+	c.JSON(http.StatusOK, pengumpulan)
+}
+
+// UPDATE - Hanya dosen bisa update submitan miliknya
 func UpdatePengumpulan(c *gin.Context) {
 	db := config.DB
 	id := c.Param("id")
@@ -86,8 +87,9 @@ func UpdatePengumpulan(c *gin.Context) {
 	}
 
 	userID, exists := c.Get("user_id")
-	if !exists || pengumpulan.UserID != userID.(uint) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Anda tidak memiliki akses untuk mengubah artefak ini"})
+	role, _ := c.Get("user_role")
+	if !exists || role != "Dosen" || pengumpulan.UserID != userID.(uint) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Anda tidak memiliki akses untuk mengubah submitan ini"})
 		return
 	}
 
@@ -96,14 +98,16 @@ func UpdatePengumpulan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
 	if err := db.Model(&pengumpulan).Updates(updateData).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Artefak berhasil diperbarui", "data": pengumpulan})
+	c.JSON(http.StatusOK, gin.H{"message": "Submitan berhasil diperbarui", "data": pengumpulan})
 }
 
+// DELETE - Hanya dosen bisa hapus submitan miliknya
 func DeletePengumpulan(c *gin.Context) {
 	db := config.DB
 	id := c.Param("id")
@@ -115,8 +119,9 @@ func DeletePengumpulan(c *gin.Context) {
 	}
 
 	userID, exists := c.Get("user_id")
-	if !exists || pengumpulan.UserID != userID.(uint) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Anda tidak memiliki akses untuk menghapus pengumpulan ini"})
+	role, _ := c.Get("user_role")
+	if !exists || role != "Dosen" || pengumpulan.UserID != userID.(uint) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Anda tidak memiliki akses untuk menghapus submitan ini"})
 		return
 	}
 
@@ -125,5 +130,5 @@ func DeletePengumpulan(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "pengumpulan berhasil dihapus"})
+	c.JSON(http.StatusOK, gin.H{"message": "Submitan berhasil dihapus"})
 }
