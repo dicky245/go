@@ -2,6 +2,9 @@ package controllers
 
 import (
 	"net/http"
+	"path/filepath"
+	"strconv"
+	"time"
 	"github.com/gin-gonic/gin"
 	"github.com/rudychandra/lagi/config"
 	"github.com/rudychandra/lagi/model"
@@ -76,7 +79,7 @@ func GetPengumpulanByID(c *gin.Context) {
 }
 
 // UPDATE - Hanya dosen bisa update submitan miliknya
-func UpdatePengumpulan(c *gin.Context) {
+func UploadFilePengumpulan(c *gin.Context) {
 	db := config.DB
 	id := c.Param("id")
 
@@ -89,22 +92,41 @@ func UpdatePengumpulan(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	role, _ := c.Get("user_role")
 	if !exists || role != "Dosen" || pengumpulan.UserID != userID.(uint) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Anda tidak memiliki akses untuk mengubah submitan ini"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "Anda tidak memiliki akses untuk mengunggah file ini"})
 		return
 	}
 
-	var updateData map[string]interface{}
-	if err := c.ShouldBindJSON(&updateData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File tidak ditemukan"})
 		return
 	}
 
-	if err := db.Model(&pengumpulan).Updates(updateData).Error; err != nil {
+	if file.Size > 100*1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file maksimal 100MB"})
+		return
+	}
+
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	ext := filepath.Ext(file.Filename)
+	safeFilename := "submit_" + id + "_" + timestamp + ext
+	filePath := filepath.Join("uploads", safeFilename)
+
+	if err := c.SaveUploadedFile(file, filePath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Submitan berhasil diperbarui", "data": pengumpulan})
+	pengumpulan.File = safeFilename
+	if err := db.Save(&pengumpulan).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "File berhasil diunggah",
+		"data":    pengumpulan,
+	})
 }
 
 // DELETE - Hanya dosen bisa hapus submitan miliknya

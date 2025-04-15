@@ -47,12 +47,14 @@ func SetupRouter(r *gin.Engine) {
 	pengumpulan := r.Group("/pengumpulan")
 	pengumpulan.Use(middleware.InternalAuthMiddleware())
 	{
-		pengumpulan.GET("/", controllers.GetPengumpulan)               // Semua lihat
-		pengumpulan.GET("/:id", controllers.GetPengumpulanByID)       // Semua lihat detail
-		pengumpulan.POST("/", controllers.CreatePengumpulan)          // Dosen buat
-		pengumpulan.PUT("/:id", controllers.UpdatePengumpulan)        // Dosen update
-		pengumpulan.DELETE("/:id", controllers.DeletePengumpulan)     // Dosen hapus
+		pengumpulan.GET("/", controllers.GetPengumpulan)
+		pengumpulan.GET("/:id", controllers.GetPengumpulanByID)
+		pengumpulan.POST("/", controllers.CreatePengumpulan)
+		// pengumpulan.PUT("/:id", controllers.UpdatePengumpulan)
+		pengumpulan.DELETE("/:id", controllers.DeletePengumpulan)
+		pengumpulan.POST("/:id/upload", controllers.UploadFilePengumpulan) // Upload file endpoint
 	}
+	
 	
 
 	// Artefak
