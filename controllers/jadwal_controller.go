@@ -36,7 +36,7 @@ func GetJadwalByID(c *gin.Context) {
 		if !exists {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "User tidak ditemukan dalam token"})
 			return
-		}
+			}
 
 		var jadwal model.Jadwal
 		if err := db.Where("jadwal_id = ? AND user_id = ?", id, userID).First(&jadwal).Error; err != nil {

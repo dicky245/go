@@ -10,14 +10,26 @@ func SetupRouter(r *gin.Engine) {
 	// Endpoint login
 	r.POST("/login", controllers.Login)
 
-	// Group untuk endpoint internal mahasiswa - menggunakan token internal
 	mahasiswa := r.Group("/bimbingan")
 	mahasiswa.Use(middleware.InternalAuthMiddleware()) // pakai token internal
 	{
-		mahasiswa.GET("/", controllers.GetBimbingan)       // Mahasiswa bisa lihat bimbingan mereka
-		mahasiswa.POST("/", controllers.CreateBimbingan)   // Mahasiswa bisa request bimbingan
-		mahasiswa.DELETE("/:id", controllers.DeleteBimbingan) // Mahasiswa bisa delete bimbingan
+		// Mahasiswa bisa lihat bimbingan mereka (GET)
+		mahasiswa.GET("/", controllers.GetBimbingan)
+		// Mahasiswa bisa request bimbingan baru (POST)
+		mahasiswa.POST("/", controllers.CreateBimbingan)
+		// Mahasiswa bisa delete bimbingan mereka sendiri (DELETE)
+		
 	}
+	// Protected routes
+	api := r.Group("/api")
+	api.Use(middleware.AuthMiddleware())
+	{
+		// Student routes
+		api.GET("/student", controllers.GetStudentData)
+		
+		// Add other protected routes here
+	}
+	
 	
 	pengumuman := r.Group("/pengumuman")
 	pengumuman.Use(middleware.InternalAuthMiddleware())
@@ -47,26 +59,14 @@ func SetupRouter(r *gin.Engine) {
 	pengumpulan := r.Group("/pengumpulan")
 	pengumpulan.Use(middleware.InternalAuthMiddleware())
 	{
-		pengumpulan.GET("/", controllers.GetPengumpulan)
-		pengumpulan.GET("/:id", controllers.GetPengumpulanByID)
-		pengumpulan.POST("/", controllers.CreatePengumpulan)
-		// pengumpulan.PUT("/:id", controllers.UpdatePengumpulan)
-		pengumpulan.DELETE("/:id", controllers.DeletePengumpulan)
-		pengumpulan.POST("/:id/upload", controllers.UploadFilePengumpulan) // Upload file endpoint
+		pengumpulan.GET("/", controllers.GetSubmitanTugas)                   // Get all tasks for the user's group
+		pengumpulan.GET("/:id", controllers.GetSubmitanTugasById)            // Get a specific task by ID
+		pengumpulan.POST("/:id/upload", controllers.UpdateUploadFileTugas)         // Upload a file for a task (first time)
+		pengumpulan.PUT("/:id/upload", controllers.UpdateUploadFileTugas)    // Update/replace uploaded file
 	}
 	
 	
-
 	// Artefak
-	artefak := r.Group("/artefak")
-	artefak.Use(middleware.InternalAuthMiddleware())
-	{
-		artefak.GET("/", controllers.GetArtefak)      // Mahasiswa dan Dosen lihat artefak
-		artefak.GET("/:id", controllers.GetArtefakByID) // Mahasiswa dan Dosen lihat artefak detail
-		artefak.POST("/", controllers.CreateArtefak)   // Dosen buat artefak
-		artefak.DELETE("/:id", controllers.DeleteArtefak) // Dosen hapus artefak
-		artefak.GET("/submitan", controllers.GetSubmitMahasiswa) // Mahasiswa lihat submitan mereka
-	}
 }
 
 // Rute untuk role
@@ -91,17 +91,5 @@ func DosenRoleRoutes(r *gin.Engine) {
 		roleGroup.DELETE("/:id", controllers.DeleteDosenRole) // Admin hapus dosen role
 		roleGroup.GET("/prodi/:prodi", controllers.GetDosenRolesByProdi) // Admin lihat dosen berdasarkan prodi
 		roleGroup.GET("/:id", controllers.GetDosenRolesByid) // Admin lihat dosen role berdasarkan id
-	}
-}
-
-// Rute untuk kelompok
-func KelompokRoutes(r *gin.Engine) {
-	roleGroup := r.Group("/kelompok")
-	{
-		roleGroup.POST("/", controllers.CreateKelompok)  // Admin buat kelompok
-		roleGroup.GET("/", controllers.GetKelompok)    // Admin lihat semua kelompok
-		roleGroup.PUT("/:id", controllers.UpdateKelompok) // Admin update kelompok
-		roleGroup.DELETE("/:id", controllers.DeleteKelompok) // Admin hapus kelompok
-		roleGroup.GET("/:id", controllers.GetKelompokByID) // Admin lihat kelompok berdasarkan id
 	}
 }

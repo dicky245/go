@@ -18,12 +18,12 @@ func main() {
 	routes.SetupRouter(r)
 	routes.RoleRoutes(r)
 	routes.DosenRoleRoutes(r)
-	routes.KelompokRoutes(r)
 	
 
-	port := "8080"
-	fmt.Println("Server berjalan di http://localhost:" + port)
-	err := r.Run(":" + port)
+	port := "8080" 
+    fmt.Println("Server berjalan di http://0.0.0.0:" + port)
+    err := r.Run("0.0.0.0:" + port)
+
 
 	if err != nil {
 		log.Fatal("Gagal menjalankan server:", err)
