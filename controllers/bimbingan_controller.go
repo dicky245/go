@@ -12,7 +12,7 @@ import (
 )
 
 // Ambil semua bimbingan milik user (berdasarkan token)
-func GetBimbingan(c *gin.Context) {
+	func GetBimbingan(c *gin.Context) {
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user_id tidak ditemukan di token"})
@@ -24,7 +24,12 @@ func GetBimbingan(c *gin.Context) {
 	// Cari data kelompok_id dari tabel kelompok_mahasiswa berdasarkan user_id
 	var km model.KelompokMahasiswa
 	if err := config.DB.Where("user_id = ?", userID).First(&km).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Kelompok tidak ditemukan untuk user"})
+		// Return a more friendly error with a specific status code for "no group" case
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Mahasiswa belum memiliki kelompok",
+			"status": "no_group",
+			"data": []map[string]interface{}{},
+		})
 		return
 	}
 
@@ -38,8 +43,11 @@ func GetBimbingan(c *gin.Context) {
 		return
 	}
 	
-
-	c.JSON(http.StatusOK, bimbingans)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Data bimbingan berhasil diambil",
+		"status": "success",
+		"data": bimbingans,
+	})
 }
 
 // Tambah request bimbingan (hanya mahasiswa)
@@ -50,8 +58,9 @@ func CreateBimbingan(c *gin.Context) {
 	// Ambil kelompok_id dari user_id
 	var km model.KelompokMahasiswa
 	if err := config.DB.Where("user_id = ?", userID).First(&km).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Mahasiswa belum tergabung dalam kelompok",
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Mahasiswa belum tergabung dalam kelompok",
+			"status": "no_group",
 		})
 		return
 	}
@@ -64,7 +73,6 @@ func CreateBimbingan(c *gin.Context) {
 		return
 	}
 	
-
 	// Set user_id dan kelompok_id pada permintaan bimbingan
 	req.UserID = userID
 	req.KelompokID = km.KelompokID
@@ -82,5 +90,9 @@ func CreateBimbingan(c *gin.Context) {
 	}
 
 	// Kembalikan response
-	c.JSON(http.StatusCreated, req)
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Bimbingan berhasil dibuat",
+		"status": "success",
+		"data": req,
+	})
 }
