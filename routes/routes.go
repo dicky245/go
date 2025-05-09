@@ -10,86 +10,85 @@ func SetupRouter(r *gin.Engine) {
 	// Endpoint login
 	r.POST("/login", controllers.Login)
 
-	// Group untuk endpoint internal mahasiswa - menggunakan token internal
 	mahasiswa := r.Group("/bimbingan")
 	mahasiswa.Use(middleware.InternalAuthMiddleware()) // pakai token internal
 	{
+		// Mahasiswa bisa lihat bimbingan mereka (GET)
 		mahasiswa.GET("/", controllers.GetBimbingan)
+		// Mahasiswa bisa request bimbingan baru (POST)
 		mahasiswa.POST("/", controllers.CreateBimbingan)
-		mahasiswa.DELETE("/:id", controllers.DeleteBimbingan)
+		// Mahasiswa bisa delete bimbingan mereka sendiri (DELETE)
 	}
+	
+	// Protected routes
+	api := r.Group("/api")
+	api.Use(middleware.AuthMiddleware())
+	{
+		// Student routes
+		api.GET("/student", controllers.GetStudentData)
+		
+		// Add other protected routes here
+	}
+	
 	pengumuman := r.Group("/pengumuman")
 	pengumuman.Use(middleware.InternalAuthMiddleware())
 	{
-		pengumuman.GET("/", controllers.GetPengumuman)
-		pengumuman.GET("/:id", controllers.GetPengumumanByID)
-		pengumuman.POST("/", controllers.CreatePengumuman)
-		pengumuman.DELETE("/:id", controllers.DeletePengumuman)
+		pengumuman.GET("/", controllers.GetPengumuman)   // Mahasiswa bisa lihat pengumuman
+		pengumuman.GET("/:id", controllers.GetPengumumanByID) // Mahasiswa bisa lihat detail pengumuman
+		pengumuman.POST("/", controllers.CreatePengumuman)  // Dosen buat pengumuman
+		pengumuman.DELETE("/:id", controllers.DeletePengumuman) // Dosen delete pengumuman
 	}
-
+		
 	approve := r.Group("/approve")
 	approve.Use(middleware.InternalAuthMiddleware())
 	{
-		approve.GET("/", controllers.GetUpdateBimbingan)
-		approve.GET("/:id", controllers.GetUpdateBimbinganByID)
-		approve.PUT("/:id", controllers.UpdateRequestBimbingan)
+		approve.GET("/", controllers.GetUpdateBimbingan) // Dosen bisa approve bimbingan
+		approve.GET("/:id", controllers.GetUpdateBimbinganByID) // Dosen lihat detail
+		approve.PUT("/:id", controllers.UpdateRequestBimbingan) // Dosen update request bimbingan
 	}
+	
+	// Add jadwal routes - THIS WAS MISSING
 	jadwal := r.Group("/jadwal")
 	jadwal.Use(middleware.InternalAuthMiddleware())
 	{
-		jadwal.GET("/", controllers.GetJadwal)
-		jadwal.GET("/:id", controllers.GetJadwalByID)
-		jadwal.POST("/", controllers.CreateJadwal)
+		jadwal.GET("/", controllers.GetJadwal)       // Mahasiswa lihat jadwal
+		jadwal.GET("/:id", controllers.GetJadwalByID) // Mahasiswa lihat jadwal spesifik
+		jadwal.POST("/", controllers.CreateJadwal)    // Dosen buat jadwal
 	}
+	
 	pengumpulan := r.Group("/pengumpulan")
 	pengumpulan.Use(middleware.InternalAuthMiddleware())
 	{
-		pengumpulan.GET("/", controllers.GetPengumpulan)
-		pengumpulan.GET("/:id", controllers.GetPengumpulanByID)
-		pengumpulan.POST("/", controllers.CreatePengumpulan)
-		pengumpulan.DELETE("/:id", controllers.DeletePengumpulan)
+		pengumpulan.GET("/", controllers.GetSubmitanTugas)                   // Get all tasks for the user's group
+		pengumpulan.GET("/:id", controllers.GetSubmitanTugasById)            // Get a specific task by ID
+		pengumpulan.POST("/:id/upload", controllers.UploadFileTugas)         // Upload a file for a task (first time)
+		pengumpulan.PUT("/:id/upload", controllers.UploadFileTugas) // Update/replace uploaded file
 	}
-	// artefak
-	artefak := r.Group("/artefak")
-	artefak.Use(middleware.InternalAuthMiddleware())
-	{
-		artefak.GET("/", controllers.GetArtefak)
-		artefak.GET("/:id", controllers.GetArtefakByID)
-		artefak.POST("/", controllers.CreateArtefak)
-		artefak.DELETE("/:id", controllers.DeleteArtefak)
-		artefak.GET("/submitan", controllers.GetSubmitMahasiswa)
-
-	}
-
+	
+	// Artefak
 }
+
+// Rute untuk role
 func RoleRoutes(r *gin.Engine) {
 	roleGroup := r.Group("/roles")
 	{
-		roleGroup.POST("/", controllers.CreateRole)
-		roleGroup.GET("/", controllers.GetRoles)
-		roleGroup.GET("/:id", controllers.GetRoleByID)
-		roleGroup.PUT("/:id", controllers.UpdateRole)
-		roleGroup.DELETE("/:id", controllers.DeleteRole)
+		roleGroup.POST("/", controllers.CreateRole)  // Admin buat role baru
+		roleGroup.GET("/", controllers.GetRoles)    // Admin lihat semua role
+		roleGroup.GET("/:id", controllers.GetRoleByID) // Admin lihat role tertentu
+		roleGroup.PUT("/:id", controllers.UpdateRole)  // Admin update role
+		roleGroup.DELETE("/:id", controllers.DeleteRole) // Admin hapus role
 	}
 }
+
+// Rute untuk dosen roles
 func DosenRoleRoutes(r *gin.Engine) {
 	roleGroup := r.Group("/dosenroles")
 	{
-		roleGroup.POST("/", controllers.CreateDosenRoles)
-		roleGroup.GET("/", controllers.GetDosenroles)
-		roleGroup.PUT("/:id", controllers.UpdateDosenrole)
-		roleGroup.DELETE("/:id", controllers.DeleteDosenRole)
-		roleGroup.GET("/prodi/:prodi", controllers.GetDosenRolesByProdi)
-		roleGroup.GET("/:id", controllers.GetDosenRolesByid)
-	}
-}
-func KelompokRoutes(r *gin.Engine) {
-	roleGroup := r.Group("/kelompok")
-	{
-		roleGroup.POST("/", controllers.CreateKelompok)
-		roleGroup.GET("/", controllers.GetKelompok)
-		roleGroup.PUT("/:id", controllers.UpdateKelompok)
-		roleGroup.DELETE("/:id", controllers.DeleteKelompok)
-		roleGroup.GET("/:id", controllers.GetKelompokByID)
+		roleGroup.POST("/", controllers.CreateDosenRoles)  // Admin buat dosen role
+		roleGroup.GET("/", controllers.GetDosenroles)    // Admin lihat dosen role
+		roleGroup.PUT("/:id", controllers.UpdateDosenrole) // Admin update dosen role
+		roleGroup.DELETE("/:id", controllers.DeleteDosenRole) // Admin hapus dosen role
+		roleGroup.GET("/prodi/:prodi", controllers.GetDosenRolesByProdi) // Admin lihat dosen berdasarkan prodi
+		roleGroup.GET("/:id", controllers.GetDosenRolesByid) // Admin lihat dosen role berdasarkan id
 	}
 }

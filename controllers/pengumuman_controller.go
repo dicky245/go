@@ -2,140 +2,151 @@ package controllers
 
 import (
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rudychandra/lagi/config"
 	"github.com/rudychandra/lagi/model"
 )
 
+// GetPengumuman retrieves all active announcements
 func GetPengumuman(c *gin.Context) {
 	db := config.DB
-
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User tidak ditemukan dalam token"})
+	
+	var pengumumans []model.Pengumuman
+	
+	// Get query parameters for filtering
+	prodiID := c.DefaultQuery("prodi_id", "")
+	kpaID := c.DefaultQuery("kpa_id", "")
+	
+	// Base query
+	query := db.Where("status = ?", "aktif")
+	
+	// Apply filters if provided
+	if prodiID != "" {
+		query = query.Where("prodi_id = ?", prodiID)
+	}
+	
+	if kpaID != "" {
+		query = query.Where("KPA_id = ?", kpaID)
+	}
+	
+	// Execute query with order by newest first
+	if err := query.Order("tanggal_penulisan DESC").Find(&pengumumans).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch announcements"})
 		return
 	}
-
-	var pengumumanList []model.Pengumuman
-	if err := db.Where("user_id = ?", userID.(uint)).Find(&pengumumanList).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, pengumumanList)
+	
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data": pengumumans,
+	})
 }
 
-// Ambil satu pengumuman berdasarkan ID (dan user yang login)
+// GetPengumumanByID retrieves a specific announcement by ID
 func GetPengumumanByID(c *gin.Context) {
 	db := config.DB
+	
 	id := c.Param("id")
-
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User tidak ditemukan dalam token"})
-		return
-	}
-
 	var pengumuman model.Pengumuman
-	if err := db.Where("pengumuman_id = ? AND user_id = ?", id, userID).First(&pengumuman).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Pengumuman tidak ditemukan atau bukan milik Anda"})
+	
+	if err := db.First(&pengumuman, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Announcement not found"})
 		return
 	}
-
-	c.JSON(http.StatusOK, pengumuman)
+	
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data": pengumuman,
+	})
 }
 
-// Tambah request pengumuman (hanya mahasiswa)
+// CreatePengumuman creates a new announcement
 func CreatePengumuman(c *gin.Context) {
 	db := config.DB
-	var newPengumuman model.Pengumuman
-
-	// Ambil user_id dan role dari token
+	
+	// Get user ID from token
 	userID, exists := c.Get("user_id")
-	role, roleExists := c.Get("user_role")
-	if !exists || !roleExists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User tidak ditemukan dalam token"})
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
 		return
 	}
-
-	// Hanya mahasiswa yang bisa membuat Pengumuman
-	if role != "Mahasiswa" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Hanya Mahasiswa yang dapat mengajukan Pengumuman"})
+	
+	// Parse form data
+	judul := c.PostForm("judul")
+	deskripsi := c.PostForm("deskripsi")
+	kpaID := c.PostForm("kpa_id")
+	prodiID := c.PostForm("prodi_id")
+	tmID := c.PostForm("tm_id")
+	
+	// Validate required fields
+	if judul == "" || deskripsi == "" || kpaID == "" || prodiID == "" || tmID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "All fields are required"})
 		return
 	}
-
-	// Bind JSON ke struct
-	if err := c.ShouldBindJSON(&newPengumuman); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	
+	// Convert string IDs to uint
+	kpaIDInt, _ := strconv.ParseUint(kpaID, 10, 64)
+	prodiIDInt, _ := strconv.ParseUint(prodiID, 10, 64)
+	tmIDInt, _ := strconv.ParseUint(tmID, 10, 64)
+	
+	// Create new announcement
+	pengumuman := model.Pengumuman{
+		Judul:            judul,
+		Deskripsi:        deskripsi,
+		TanggalPenulisan: time.Now(),
+		Status:           "aktif",
+		UserID:           userID.(uint),
+		KPAID:            uint(kpaIDInt),
+		ProdiID:          uint(prodiIDInt),
+		TMID:             uint(tmIDInt),
+	}
+	
+	// Handle file upload if present
+	file, err := c.FormFile("file")
+	if err == nil {
+		filename := "uploads/pengumuman/" + strconv.FormatUint(uint64(time.Now().Unix()), 10) + "_" + file.Filename
+		if err := c.SaveUploadedFile(file, filename); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
+			return
+		}
+		pengumuman.File = filename
+	}
+	
+	// Save to database
+	if err := db.Create(&pengumuman).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create announcement"})
 		return
 	}
-
-	// Set user_id dari token
-	newPengumuman.UserID = userID.(uint)
-
-	// Simpan ke DB
-	if err := db.Create(&newPengumuman).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{"message": "Pengumuman berhasil ditambahkan", "data": newPengumuman})
-}
-func UpdatePengumuman(c *gin.Context) {
-	db := config.DB
-	id := c.Param("id")
-
-	var pengumuman model.Pengumuman
-	if err := db.Where("pengumuman_id = ?", id).First(&pengumuman).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Pengumuman tidak ditemukan"})
-		return
-	}
-
-	// Pastikan user yang login adalah pemiliknya
-	userID, exists := c.Get("user_id")
-	if !exists || pengumuman.UserID != userID.(uint) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Anda tidak memiliki akses untuk mengubah pengumuman ini"})
-		return
-	}
-
-	// Bind JSON
-	var updateData map[string]interface{}
-	if err := c.ShouldBindJSON(&updateData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Update data
-	if err := db.Model(&pengumuman).Updates(updateData).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Pengumuman berhasil diperbarui", "data": pengumuman})
+	
+	c.JSON(http.StatusCreated, gin.H{
+		"status": "success",
+		"data": pengumuman,
+	})
 }
 
-// Hapus request pengumuman
+// DeletePengumuman deletes an announcement
 func DeletePengumuman(c *gin.Context) {
 	db := config.DB
+	
 	id := c.Param("id")
-
-	var pengumuman model.Pengumuman
-	if err := db.Where("pengumuman_id = ?", id).First(&pengumuman).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Pengumuman tidak ditemukan"})
+	var pengumuman model	.Pengumuman
+	
+	// Check if announcement exists
+	if err := db.First(&pengumuman, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Announcement not found"})
 		return
 	}
-
-	userID, exists := c.Get("user_id")
-	if !exists || pengumuman.UserID != userID.(uint) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Anda tidak memiliki akses untuk menghapus pengumuman ini"})
-		return
-	}
-
+	
+	// Delete the announcement
 	if err := db.Delete(&pengumuman).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete announcement"})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Pengumuman berhasil dihapus"})
+	
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"message": "Announcement deleted successfully",
+	})
 }
