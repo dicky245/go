@@ -1,377 +1,355 @@
 package controllers
 
 import (
+	"net/http"
+	"strconv"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rudychandra/lagi/config"
 	"github.com/rudychandra/lagi/model"
-	"net/http"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
-	"fmt"
 )
 
-// GetSubmitanTugas retrieves assignments based on user's group
-func GetSubmitanTugas(c *gin.Context) {
-    db := config.DB
+// GetAllTugas retrieves all tugas
+func GetAllTugas(c *gin.Context) {
+	var tugas []model.Tugas
+	
+	// Get query parameters for filtering
+	kpaID := c.Query("kpa_id")
+	prodiID := c.Query("prodi_id")
+	tmID := c.Query("tm_id")
+	status := c.Query("status")
+	kategori := c.Query("kategori_tugas")
 
-    // Get user_id from context
-    userID, exists := c.Get("user_id")
-    if !exists {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID tidak ditemukan"})
-        return
-    }
-    
-    fmt.Printf("User ID: %v\n", userID)
+	// Start building the query
+	query := config.DB.Preload("Prodi").Preload("KategoriPA").Preload("TahunMasuk")
 
-    // Find kelompok mahasiswa based on user_id WITH PRELOADED KELOMPOK
-    var km model.KelompokMahasiswa
-    if err := db.Debug().
-        Where("user_id = ?", userID).
-        Preload("Kelompok").
-        First(&km).Error; err != nil {
-        // Return a more friendly error with a specific status code for "no group" case
-        c.JSON(http.StatusOK, gin.H{
-            "message": "Mahasiswa belum memiliki kelompok",
-            "status": "no_group",
-            "data": []map[string]interface{}{},
-        })
-        return
-    }
-    
-    fmt.Printf("Kelompok Mahasiswa: %+v\n", km)
-    fmt.Printf("Kelompok: %+v\n", km.Kelompok)
+	// Apply filters if provided
+	if kpaID != "" {
+		query = query.Where("KPA_id = ?", kpaID)
+	}
+	if prodiID != "" {
+		query = query.Where("prodi_id = ?", prodiID)
+	}
+	if tmID != "" {
+		query = query.Where("TM_id = ?", tmID)
+	}
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if kategori != "" {
+		query = query.Where("kategori_tugas = ?", kategori)
+	}
 
-    // Use the preloaded Kelompok
-    kelompok := km.Kelompok
-    
-    // Log the query parameters for debugging
-    fmt.Printf("Querying tugas with prodi_id = %d and TM_id = %d\n", kelompok.ProdiID, kelompok.TMID)
+	// Execute the query
+	if err := query.Find(&tugas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Gagal mengambil data tugas",
+			"error":   err.Error(),
+		})
+		return
+	}
 
-    // Query for tugas using the values from the user's kelompok
-    var tugasList []model.Tugas
-    if err := db.Debug().
-        Where("prodi_id = ? AND TM_id = ?", kelompok.ProdiID, kelompok.TMID).
-        Preload("Prodi").
-        Preload("KategoriPA").
-        Find(&tugasList).Error; err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-        return
-    }
-    
-    fmt.Printf("Found %d tugas\n", len(tugasList))
-
-    // Format the response to match what the Flutter app expects
-    var response []map[string]interface{}
-    for _, tugas := range tugasList {
-        // Get tahun masuk data directly since the preload might fail
-        var tahunMasuk model.TahunAjaran
-        db.First(&tahunMasuk, tugas.TMID)
-        
-        // Check if this tugas has been submitted by the current kelompok
-        var pengumpulan model.PengumpulanTugas
-        var submissionStatus string = "Belum"
-        var submissionFile string = ""
-        
-        if err := db.Where("kelompok_id = ? AND tugas_id = ?", km.KelompokID, tugas.ID).First(&pengumpulan).Error; err == nil {
-            // Submission found
-            submissionStatus = pengumpulan.Status
-            submissionFile = pengumpulan.FilePath
-        }
-        
-        item := map[string]interface{}{
-            "id": tugas.ID,
-            "judul": tugas.JudulTugas,
-            "instruksi": tugas.DeskripsiTugas,
-            "batas": tugas.TanggalPengumpulan.Format(time.RFC3339),
-            "file": tugas.File,
-            "userId": tugas.UserID,
-            "status": tugas.Status,
-            "prodi": tugas.Prodi.NamaProdi,
-            "kategori_pa": tugas.KategoriPA.KategoriPA,
-            "tahun_ajaran": tahunMasuk.TahunAjaran,
-            "submission_status": submissionStatus,
-            "submission_file": submissionFile,
-        }
-        response = append(response, item)
-    }
-
-    // Return the results
-    c.JSON(http.StatusOK, gin.H{
-        "message": "Submitan tugas ditemukan",
-        "status": "success",
-        "data": response,
-    })
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Data tugas berhasil diambil",
+		"data":    tugas,
+	})
 }
 
-// GetSubmitanTugasById retrieves a specific assignment by ID
-func GetSubmitanTugasById(c *gin.Context) {
-    db := config.DB
-    
-    // Get task ID from URL parameter
-    tugasID := c.Param("id")
-    
-    // Get user_id from context
-    userID, exists := c.Get("user_id")
-    if !exists {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID tidak ditemukan"})
-        return
-    }
-    
-    // Find kelompok mahasiswa based on user_id
-    var km model.KelompokMahasiswa
-    if err := db.Where("user_id = ?", userID).First(&km).Error; err != nil {
-        // Return a more friendly error with a specific status code for "no group" case
-        c.JSON(http.StatusOK, gin.H{
-            "message": "Mahasiswa belum memiliki kelompok",
-            "status": "no_group",
-            "data": map[string]interface{}{},
-        })
-        return
-    }
-    
-    // Get the specific tugas
-    var tugas model.Tugas
-    if err := db.
-        Where("id = ?", tugasID).
-        Preload("Prodi").
-        Preload("KategoriPA").
-        First(&tugas).Error; err != nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Tugas tidak ditemukan"})
-        return
-    }
-    
-    // Get tahun masuk data directly
-    var tahunMasuk model.TahunAjaran
-    db.First(&tahunMasuk, tugas.TMID)
-    
-    // Check if this tugas has been submitted by the current kelompok
-    var pengumpulan model.PengumpulanTugas
-    var submissionStatus string = "Belum"
-    var submissionFile string = ""
-    var submissionDate time.Time
-    
-    if err := db.Where("kelompok_id = ? AND tugas_id = ?", km.KelompokID, tugas.ID).First(&pengumpulan).Error; err == nil {
-        // Submission found
-        submissionStatus = pengumpulan.Status
-        submissionFile = pengumpulan.FilePath
-        submissionDate = pengumpulan.WaktuSubmit
-    }
-    
-    // Format the response
-    response := map[string]interface{}{
-        "id": tugas.ID,
-        "judul": tugas.JudulTugas,
-        "instruksi": tugas.DeskripsiTugas,
-        "batas": tugas.TanggalPengumpulan.Format(time.RFC3339),
-        "file": tugas.File,
-        "userId": tugas.UserID,
-        "status": tugas.Status,
-        "prodi": tugas.Prodi.NamaProdi,
-        "kategori_pa": tugas.KategoriPA.KategoriPA,
-        "tahun_ajaran": tahunMasuk.TahunAjaran,
-        "submission_status": submissionStatus,
-        "submission_file": submissionFile,
-        "submission_date": submissionDate,
-    }
-    
-    // Return the result
-    c.JSON(http.StatusOK, gin.H{
-        "message": "Detail tugas ditemukan",
-        "status": "success",
-        "data": response,
-    })
-}    
+// GetTugasById retrieves a specific tugas by ID
+func GetTugasById(c *gin.Context) {
+	id := c.Param("id")
+	var tugas model.Tugas
 
-// UploadFileTugas handles file uploads for assignments
-func UploadFileTugas(c *gin.Context) {
-    db := config.DB
+	if err := config.DB.Preload("Prodi").Preload("KategoriPA").Preload("TahunMasuk").Preload("PengumpulanTugas").First(&tugas, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": "Tugas tidak ditemukan",
+			"error":   err.Error(),
+		})
+		return
+	}
 
-    // Get tugas ID from URL parameter
-    tugasIDStr := c.Param("id")
-    tugasID, err := strconv.ParseUint(tugasIDStr, 10, 64)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tugas ID"})
-        return
-    }
-
-    // Get user_id from context
-    userID, exists := c.Get("user_id")
-    if !exists {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID tidak ditemukan"})
-        return
-    }
-
-    // Find kelompok mahasiswa based on user_id
-    var km model.KelompokMahasiswa
-    if err := db.Where("user_id = ?", userID).First(&km).Error; err != nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Kelompok tidak ditemukan untuk user"})
-        return
-    }
-
-    // Check if submission already exists
-    var existingSubmission model.PengumpulanTugas
-    if err := db.Where("kelompok_id = ? AND tugas_id = ?", km.KelompokID, tugasID).First(&existingSubmission).Error; err == nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Tugas sudah pernah dikumpulkan. Gunakan fitur edit untuk memperbarui."})
-        return
-    }
-
-    // Get file from form
-    file, err := c.FormFile("file")
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "File tidak ditemukan"})
-        return
-    }
-
-    // Validate file size
-    if file.Size > 100*1024*1024 { // 100MB limit
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file maksimal 100MB"})
-        return
-    }
-
-    // Validate file extension
-    ext := strings.ToLower(filepath.Ext(file.Filename))
-    if ext != ".pdf" && ext != ".doc" && ext != ".docx" && ext != ".zip" {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Format file tidak didukung. Hanya menerima file PDF, DOC, DOCX, atau ZIP"})
-        return
-    }
-
-    // Generate unique filename
-    timestamp := time.Now().Unix()
-    filename := fmt.Sprintf("tugas_%d_%d_%d%s", km.KelompokID, tugasID, timestamp, ext)
-    filePath := filepath.Join("uploads", "tugas", filename)
-
-    // Save file to disk
-    if err := c.SaveUploadedFile(file, filePath); err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan file"})
-        return
-    }
-
-    // Check if deadline has passed
-    var tugas model.Tugas
-    if err := db.First(&tugas, tugasID).Error; err != nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Tugas tidak ditemukan"})
-        return
-    }
-
-    // Determine submission status
-    submissionStatus := "Submitted"
-    if time.Now().After(tugas.TanggalPengumpulan) {
-        submissionStatus = "Late"
-    }
-
-    // Create submission record
-    submission := model.PengumpulanTugas{
-        KelompokID:  km.KelompokID,
-        TugasID:     uint(tugasID),
-        WaktuSubmit: time.Now(),
-        FilePath:    filePath,
-        Status:      submissionStatus,
-    }
-
-    if err := db.Create(&submission).Error; err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan data pengumpulan"})
-        return
-    }
-
-    c.JSON(http.StatusOK, gin.H{
-        "message": "File tugas berhasil diunggah",
-        "data": submission,
-    })
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Data tugas berhasil diambil",
+		"data":    tugas,
+	})
 }
 
-// UpdateFileTugas handles updating an already uploaded assignment file
-func UpdateFileTugas(c *gin.Context) {
-    db := config.DB
+// CreateTugas creates a new tugas
+func CreateTugas(c *gin.Context) {
+	var input struct {
+		UserID            uint      `json:"user_id" binding:"required"`
+		JudulTugas        string    `json:"judul_tugas" binding:"required"`
+		DeskripsiTugas    string    `json:"deskripsi_tugas" binding:"required"`
+		KPAID             uint      `json:"kpa_id" binding:"required"`
+		ProdiID           uint      `json:"prodi_id" binding:"required"`
+		TMID              uint      `json:"tm_id" binding:"required"`
+		TanggalPengumpulan string    `json:"tanggal_pengumpulan" binding:"required"`
+		File              string    `json:"file"`
+		Status            string    `json:"status"`
+		KategoriTugas     string    `json:"kategori_tugas"`
+	}
 
-    // Get tugas ID from URL parameter
-    tugasIDStr := c.Param("id")
-    tugasID, err := strconv.ParseUint(tugasIDStr, 10, 64)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tugas ID"})
-        return
-    }
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Data tidak valid",
+			"error":   err.Error(),
+		})
+		return
+	}
 
-    // Get user_id from context
-    userID, exists := c.Get("user_id")
-    if !exists {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID tidak ditemukan"})
-        return
-    }
+	// Parse the date string to time.Time
+	tanggalPengumpulan, err := time.Parse(time.RFC3339, input.TanggalPengumpulan)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Format tanggal tidak valid. Gunakan format ISO 8601 (YYYY-MM-DDTHH:MM:SSZ)",
+			"error":   err.Error(),
+		})
+		return
+	}
 
-    // Find kelompok mahasiswa based on user_id
-    var km model.KelompokMahasiswa
-    if err := db.Where("user_id = ?", userID).First(&km).Error; err != nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Kelompok tidak ditemukan untuk user"})
-        return
-    }
+	// Create the tugas object
+	tugas := model.Tugas{
+		UserID:            input.UserID,
+		JudulTugas:        input.JudulTugas,
+		DeskripsiTugas:    input.DeskripsiTugas,
+		KPAID:             input.KPAID,
+		ProdiID:           input.ProdiID,
+		TMID:              input.TMID,
+		TanggalPengumpulan: tanggalPengumpulan,
+		File:              input.File,
+		Status:            input.Status,
+		KategoriTugas:     input.KategoriTugas,
+	}
 
-    // Find existing submission
-    var pengumpulan model.PengumpulanTugas
-    if err := db.Where("kelompok_id = ? AND tugas_id = ?", km.KelompokID, tugasID).First(&pengumpulan).Error; err != nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Pengumpulan tugas tidak ditemukan, silakan submit terlebih dahulu"})
-        return
-    }
+	// Set default values if not provided
+	if tugas.Status == "" {
+		tugas.Status = "berlangsung"
+	}
+	if tugas.KategoriTugas == "" {
+		tugas.KategoriTugas = "Tugas"
+	}
 
-    // Get file from form
-    file, err := c.FormFile("file")
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "File tidak ditemukan"})
-        return
-    }
+	// Save to database
+	if err := config.DB.Create(&tugas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Gagal membuat tugas",
+			"error":   err.Error(),
+		})
+		return
+	}
 
-    // Validate file size
-    if file.Size > 100*1024*1024 { // 100MB limit
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file maksimal 100MB"})
-        return
-    }
+	c.JSON(http.StatusCreated, gin.H{
+		"status":  "success",
+		"message": "Tugas berhasil dibuat",
+		"data":    tugas,
+	})
+}
 
-    // Validate file extension
-    ext := strings.ToLower(filepath.Ext(file.Filename))
-    if ext != ".pdf" && ext != ".doc" && ext != ".docx" && ext != ".zip" {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Format file tidak didukung. Hanya menerima file PDF, DOC, DOCX, atau ZIP"})
-        return
-    }
+// UpdateTugas updates an existing tugas
+func UpdateTugas(c *gin.Context) {
+	id := c.Param("id")
+	var tugas model.Tugas
 
-    // Generate new unique filename
-    timestamp := time.Now().Unix()
-    filename := fmt.Sprintf("tugas_%d_%d_%d%s", km.KelompokID, tugasID, timestamp, ext)
-    filePath := filepath.Join("uploads", "tugas", filename)
+	// Check if tugas exists
+	if err := config.DB.First(&tugas, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": "Tugas tidak ditemukan",
+			"error":   err.Error(),
+		})
+		return
+	}
 
-    // Save new file to disk
-    if err := c.SaveUploadedFile(file, filePath); err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan file baru"})
-        return
-    }
+	// Bind input data
+	var input struct {
+		JudulTugas        string    `json:"judul_tugas"`
+		DeskripsiTugas    string    `json:"deskripsi_tugas"`
+		KPAID             uint      `json:"kpa_id"`
+		ProdiID           uint      `json:"prodi_id"`
+		TMID              uint      `json:"tm_id"`
+		TanggalPengumpulan string    `json:"tanggal_pengumpulan"`
+		File              string    `json:"file"`
+		Status            string    `json:"status"`
+		KategoriTugas     string    `json:"kategori_tugas"`
+	}
 
-    // Check if deadline has passed
-    var tugas model.Tugas
-    if err := db.First(&tugas, tugasID).Error; err != nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Tugas tidak ditemukan"})
-        return
-    }
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Data tidak valid",
+			"error":   err.Error(),
+		})
+		return
+	}
 
-    // Determine submission status
-    submissionStatus := "Resubmitted"
-    if time.Now().After(tugas.TanggalPengumpulan) && pengumpulan.Status != "Late" {
-        submissionStatus = "Late"
-    } else if pengumpulan.Status == "Late" {
-        submissionStatus = "Late"
-    }
+	// Update fields if provided
+	if input.JudulTugas != "" {
+		tugas.JudulTugas = input.JudulTugas
+	}
+	if input.DeskripsiTugas != "" {
+		tugas.DeskripsiTugas = input.DeskripsiTugas
+	}
+	if input.KPAID != 0 {
+		tugas.KPAID = input.KPAID
+	}
+	if input.ProdiID != 0 {
+		tugas.ProdiID = input.ProdiID
+	}
+	if input.TMID != 0 {
+		tugas.TMID = input.TMID
+	}
+	if input.TanggalPengumpulan != "" {
+		tanggalPengumpulan, err := time.Parse(time.RFC3339, input.TanggalPengumpulan)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"status":  "error",
+				"message": "Format tanggal tidak valid. Gunakan format ISO 8601 (YYYY-MM-DDTHH:MM:SSZ)",
+				"error":   err.Error(),
+			})
+			return
+		}
+		tugas.TanggalPengumpulan = tanggalPengumpulan
+	}
+	if input.File != "" {
+		tugas.File = input.File
+	}
+	if input.Status != "" {
+		tugas.Status = input.Status
+	}
+	if input.KategoriTugas != "" {
+		tugas.KategoriTugas = input.KategoriTugas
+	}
 
-    // Update submission record
-    pengumpulan.FilePath = filePath
-    pengumpulan.WaktuSubmit = time.Now()
-    pengumpulan.Status = submissionStatus
+	// Save updates to database
+	if err := config.DB.Save(&tugas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Gagal memperbarui tugas",
+			"error":   err.Error(),
+		})
+		return
+	}
 
-    if err := db.Save(&pengumpulan).Error; err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memperbarui pengumpulan tugas"})
-        return
-    }
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Tugas berhasil diperbarui",
+		"data":    tugas,
+	})
+}
 
-    c.JSON(http.StatusOK, gin.H{
-        "message": "File tugas berhasil diperbarui",
-        "data": pengumpulan,
-    })
+// DeleteTugas deletes a tugas
+func DeleteTugas(c *gin.Context) {
+	id := c.Param("id")
+	var tugas model.Tugas
+
+	// Check if tugas exists
+	if err := config.DB.First(&tugas, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": "Tugas tidak ditemukan",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// Delete from database
+	if err := config.DB.Delete(&tugas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Gagal menghapus tugas",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Tugas berhasil dihapus",
+	})
+}
+
+// GetTugasByKategori retrieves tugas filtered by kategori_tugas
+func GetTugasByKategori(c *gin.Context) {
+	kategori := c.Param("kategori")
+	var tugas []model.Tugas
+
+	if err := config.DB.Where("kategori_tugas = ?", kategori).
+		Preload("Prodi").Preload("KategoriPA").Preload("TahunMasuk").
+		Find(&tugas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Gagal mengambil data tugas",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Data tugas berhasil diambil",
+		"data":    tugas,
+	})
+}
+
+// GetTugasByStatus retrieves tugas filtered by status
+func GetTugasByStatus(c *gin.Context) {
+	status := c.Param("status")
+	var tugas []model.Tugas
+
+	if err := config.DB.Where("status = ?", status).
+		Preload("Prodi").Preload("KategoriPA").Preload("TahunMasuk").
+		Find(&tugas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Gagal mengambil data tugas",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Data tugas berhasil diambil",
+		"data":    tugas,
+	})
+}
+
+// GetTugasByProdi retrieves tugas filtered by prodi_id
+func GetTugasByProdi(c *gin.Context) {
+	prodiID, err := strconv.Atoi(c.Param("prodi_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "ID Prodi tidak valid",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	var tugas []model.Tugas
+
+	if err := config.DB.Where("prodi_id = ?", prodiID).
+		Preload("Prodi").Preload("KategoriPA").Preload("TahunMasuk").
+		Find(&tugas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Gagal mengambil data tugas",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Data tugas berhasil diambil",
+		"data":    tugas,
+	})
 }

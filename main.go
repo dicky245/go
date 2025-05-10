@@ -10,22 +10,19 @@
 	)
 
 	func main() {
-		
-		config.Connect() // Hubungkan database
-		
-
+		config.Connect()
+	
 		r := gin.Default()
-		routes.SetupRouter(r)
-		routes.RoleRoutes(r)
-		routes.DosenRoleRoutes(r)
+		routes.SetupRouter(r) // Sudah cukup, jangan panggil RoleRoutes lagi
 		
-
-		port := "8080" 
+	
+		port := "8080"
 		fmt.Println("Server berjalan di http://0.0.0.0:" + port)
 		err := r.Run("0.0.0.0:" + port)
-
-
+	
 		if err != nil {
 			log.Fatal("Gagal menjalankan server:", err)
 		}
 	}
+	
+	
