@@ -59,34 +59,45 @@ func SetupRouter(r *gin.Engine) {
 	}
 
 	// --- Pengumpulan Tugas ---
-	pengumpulan := r.Group("/pengumpulan")
-	pengumpulan.Use(middleware.InternalAuthMiddleware())
-	{
-		pengumpulan.GET("/", controllers.GetAllTugas)
-		pengumpulan.GET("/:id", controllers.GetTugasById)
-		pengumpulan.POST("/:id/upload", controllers.CreateTugas)
-		pengumpulan.PUT("/:id/upload", controllers.UpdateTugas)
-	}
+	// Use the dedicated setup function for pengumpulan routes
+	SetupPengumpulanRoutes(r)
 
 	// --- Tugas Management ---
 	TugasRoutes(r)
+
 	// --- Role Management ---
 	RoleRoutes(r)
 	DosenRoleRoutes(r)
+}
+
+// SetupPengumpulanRoutes configures all routes related to assignment submissions
+func SetupPengumpulanRoutes(r *gin.Engine) {
+	pengumpulan := r.Group("/pengumpulan")
+	pengumpulan.Use(middleware.InternalAuthMiddleware())
+	{
+		// Get all tugas for mahasiswa
+		pengumpulan.GET("/", controllers.GetAllTugas)
+		
+		// Get specific tugas by ID
+		pengumpulan.GET("/:id", controllers.GetTugasById)
+		
+		// Create a new submission for an assignment
+		pengumpulan.POST("/:id/upload", controllers.CreatePengumpulanTugas)
+		
+		// Update an existing submission
+		pengumpulan.PUT("/:id/upload", controllers.UpdateTugas)
+	}
 }
 
 func TugasRoutes(r *gin.Engine) {
 	tugasGroup := r.Group("/tugas")
 	tugasGroup.Use(middleware.InternalAuthMiddleware()) // Using the same auth middleware as other routes
 	{
-		tugasGroup.GET("/", controllers.GetAllTugas)
-		tugasGroup.GET("/:id", controllers.GetTugasById)
-		tugasGroup.POST("/", controllers.CreateTugas)
-		tugasGroup.PUT("/:id", controllers.UpdateTugas)
-		tugasGroup.DELETE("/:id", controllers.DeleteTugas)
-		tugasGroup.GET("/kategori/:kategori", controllers.GetTugasByKategori)
-		tugasGroup.GET("/status/:status", controllers.GetTugasByStatus)
-		tugasGroup.GET("/prodi/:prodi_id", controllers.GetTugasByProdi)
+		tugasGroup.GET("/", controllers.GetAllTugas)             // Get all tugas for mahasiswa
+		tugasGroup.GET("/:id", controllers.GetTugasById)         // Get specific tugas by ID
+		tugasGroup.GET("/kategori/:kategori", controllers.GetTugasByKategori)  // Get tasks by kategori
+		tugasGroup.GET("/status/:status", controllers.GetTugasByStatus)  // Get tasks by status
+		tugasGroup.GET("/prodi/:prodi_id", controllers.GetTugasByProdi)  // Get tasks by prodi_id
 	}
 }
 
