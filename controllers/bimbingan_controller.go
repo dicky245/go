@@ -40,6 +40,30 @@ func GetBimbingan(c *gin.Context) {
 		return
 	}
 
+	// Debug: Print time values
+	for i, b := range bimbingans {
+		fmt.Printf("Bimbingan %d - RencanaMulai: %v, RencanaSelesai: %v\n", 
+			b.ID, b.RencanaMulai, b.RencanaSelesai)
+		
+		// Ensure times are in UTC when sent to client
+		// The client will handle conversion to local time
+		if !b.RencanaMulai.IsZero() {
+			bimbingans[i].RencanaMulai = b.RencanaMulai.UTC()
+		}
+		if !b.RencanaSelesai.IsZero() {
+			bimbingans[i].RencanaSelesai = b.RencanaSelesai.UTC()
+		}
+		if !b.CreatedAt.IsZero() {
+			bimbingans[i].CreatedAt = b.CreatedAt.UTC()
+		}
+		if !b.UpdatedAt.IsZero() {
+			bimbingans[i].UpdatedAt = b.UpdatedAt.UTC()
+		}
+		
+		fmt.Printf("After UTC conversion - RencanaMulai: %v, RencanaSelesai: %v\n", 
+			bimbingans[i].RencanaMulai, bimbingans[i].RencanaSelesai)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Data bimbingan berhasil diambil",
 		"status":  "success",
@@ -67,11 +91,17 @@ func CreateBimbingan(c *gin.Context) {
 		return
 	}
 
+	// Debug: Print received time values
+	fmt.Printf("Received RencanaMulai: %v\n", req.RencanaMulai)
+	fmt.Printf("Received RencanaSelesai: %v\n", req.RencanaSelesai)
+
+	// Ensure times are stored as UTC in the database
+	// The client should already be sending UTC times
 	req.UserID = userID
 	req.KelompokID = km.KelompokID
 	req.Status = "menunggu"
-	req.CreatedAt = time.Now()
-	req.UpdatedAt = time.Now()
+	req.CreatedAt = time.Now().UTC()
+	req.UpdatedAt = time.Now().UTC()
 
 	if err := config.DB.Create(&req).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -80,6 +110,10 @@ func CreateBimbingan(c *gin.Context) {
 		})
 		return
 	}
+
+	// Debug: Print stored time values
+	fmt.Printf("Stored RencanaMulai: %v\n", req.RencanaMulai)
+	fmt.Printf("Stored RencanaSelesai: %v\n", req.RencanaSelesai)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Bimbingan berhasil dibuat",

@@ -2,11 +2,10 @@ package controllers
 
 import (
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,486 +13,341 @@ import (
 	"github.com/rudychandra/lagi/model"
 )
 
-// CreatePengumpulanTugas handles the task submission by mahasiswa
-func CreatePengumpulanTugas(c *gin.Context) {
-	log.Println("CreatePengumpulanTugas called")
-	
-	// Get the tugas_id from the URL parameter
-	tugasIDStr := c.Param("id")
-	log.Printf("Received tugas_id: %s", tugasIDStr)
-	
-	tugasID, err := strconv.ParseUint(tugasIDStr, 10, 32)
-	if err != nil {
-		log.Printf("Error parsing tugas_id: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": "ID tugas tidak valid",
-			"error":   err.Error(),
-		})
-		return
-	}
+// GetSubmitanTugas retrieves assignments based on user's group
+func GetSubmitanTugas(c *gin.Context) {
+    db := config.DB
 
-	// Check if the tugas exists
-	var tugas model.Tugas
-	if err := config.DB.First(&tugas, tugasID).Error; err != nil {
-		log.Printf("Tugas not found with ID %d: %v", tugasID, err)
-		c.JSON(http.StatusNotFound, gin.H{
-			"status":  "error",
-			"message": "Tugas tidak ditemukan",
-			"error":   err.Error(),
-		})
-		return
-	}
-	log.Printf("Found tugas: %s", tugas.JudulTugas)
+    // Get user_id from context
+    userID, exists := c.Get("user_id")
+    if !exists {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID tidak ditemukan"})
+        return
+    }
 
-	// Get the file from the form
-	file, err := c.FormFile("file")
-	if err != nil {
-		log.Printf("Error getting file from form: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": "File tidak ditemukan dalam request",
-			"error":   err.Error(),
-		})
-		return
-	}
-	log.Printf("Received file: %s, size: %d", file.Filename, file.Size)
+    fmt.Printf("User ID: %v\n", userID)
 
-	// Validate file type
-	allowedExtensions := []string{".pdf", ".doc", ".docx", ".zip"}
-	ext := filepath.Ext(file.Filename)
-	validExt := false
-	for _, allowedExt := range allowedExtensions {
-		if ext == allowedExt {
-			validExt = true
-			break
-		}
-	}
+    // Find kelompok mahasiswa based on user_id WITH PRELOADED KELOMPOK
+    var km model.KelompokMahasiswa
+    if err := db.Debug().
+        Where("user_id = ?", userID).
+        Preload("Kelompok").
+        First(&km).Error; err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Kelompok tidak ditemukan untuk user"})
+        return
+    }
 
-	if !validExt {
-		log.Printf("Invalid file extension: %s", ext)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": "Format file tidak didukung. Hanya menerima file PDF, DOC, DOCX, atau ZIP",
-		})
-		return
-	}
+    fmt.Printf("Kelompok Mahasiswa: %+v\n", km)
+    fmt.Printf("Kelompok: %+v\n", km.Kelompok)
 
-	// Create uploads directory if it doesn't exist
-	if err := os.MkdirAll("uploads", 0755); err != nil {
-		log.Printf("Error creating uploads directory: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Gagal membuat direktori untuk menyimpan file",
-			"error":   err.Error(),
-		})
-		return
-	}
+    // Use the preloaded Kelompok
+    kelompok := km.Kelompok
 
-	// Create a unique filename to prevent overwriting
-	filename := fmt.Sprintf("%d_%s_%s", tugasID, time.Now().Format("20060102150405"), file.Filename)
-	filePath := filepath.Join("uploads", filename)
-	log.Printf("File will be saved to: %s", filePath)
+    // Log the query parameters for debugging
+    fmt.Printf("Querying tugas with prodi_id = %d and TM_id = %d\n", kelompok.ProdiID, kelompok.TMID)
 
-	// Save the file
-	if err := c.SaveUploadedFile(file, filePath); err != nil {
-		log.Printf("Error saving file: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Gagal menyimpan file",
-			"error":   err.Error(),
-		})
-		return
-	}
-	log.Printf("File saved successfully")
+    // Query for tugas using the values from the user's kelompok
+    var tugasList []model.Tugas
+    if err := db.Debug().
+        Where("prodi_id = ? AND TM_id = ?", kelompok.ProdiID, kelompok.TMID).
+        Preload("Prodi").
+        Preload("KategoriPA").
+        Preload("TahunMasuk").
+        Preload("PengumpulanTugas", "kelompok_id = ?", km.KelompokID).
+        Find(&tugasList).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
 
-	// Get kelompok_id from the authenticated user or set a default value
-	// In a real application, this should come from the authenticated user's session
-	var kelompokID uint = 1 // Default value
-	log.Printf("Using kelompok_id: %d", kelompokID)
+    fmt.Printf("Found %d tugas\n", len(tugasList))
 
-	// Check if a submission already exists for this tugas and kelompok
-	var existingSubmission model.PengumpulanTugas
-	result := config.DB.Where("tugas_id = ? AND kelompok_id = ?", tugasID, kelompokID).First(&existingSubmission)
+    // Format the response to match what the Flutter app expects
+    var response []map[string]interface{}
+    for _, tugas := range tugasList {
+        // Check if there's a submission for this tugas by this kelompok
+        var submission map[string]interface{} = nil
+        if len(tugas.PengumpulanTugas) > 0 {
+            pengumpulan := tugas.PengumpulanTugas[0]
+            submission = map[string]interface{}{
+                "id": pengumpulan.ID,
+                "kelompok_id": pengumpulan.KelompokID,
+                "tugas_id": pengumpulan.TugasID,
+                "waktu_submit": pengumpulan.WaktuSubmit.Format(time.RFC3339),
+                "file_path": pengumpulan.FilePath,
+                "status": pengumpulan.Status,
+            }
+        }
 
-	if result.Error == nil {
-		log.Printf("Found existing submission, updating it")
-		// Submission already exists, update it instead of creating a new one
-		existingSubmission.FilePath = filePath
-		existingSubmission.WaktuSubmit = time.Now()
-		existingSubmission.Status = "Resubmitted"
+        // Process file path for Laravel storage if needed
+        filePath := tugas.File
+        if strings.HasPrefix(filePath, "tugas_files/") {
+            // This is a Laravel storage path, keep as is
+        } else if !strings.HasPrefix(filePath, "http") && filePath != "" {
+            // This is a local path, make it accessible via our file proxy
+            filePath = "uploads/" + filePath
+        }
 
-		if err := config.DB.Save(&existingSubmission).Error; err != nil {
-			log.Printf("Error updating existing submission: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": "Gagal memperbarui data pengumpulan tugas",
-				"error":   err.Error(),
-			})
-			return
-		}
+        // Replace ternary operator with if-else statements
+        var kategoriPA map[string]interface{}
+        if tugas.KategoriPA.ID > 0 {
+            kategoriPA = map[string]interface{}{
+                "id": tugas.KategoriPA.ID,
+                "kategori_pa": tugas.KategoriPA.KategoriPA,
+            }
+        } else {
+            kategoriPA = nil
+        }
 
-		log.Printf("Submission updated successfully")
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "success",
-			"message": "Tugas berhasil diperbarui",
-			"data":    existingSubmission,
-		})
-		return
-	}
+        var tahunMasuk map[string]interface{}
+        if tugas.TahunMasuk.ID > 0 {
+            tahunMasuk = map[string]interface{}{
+                "id": tugas.TahunMasuk.ID,
+                "tahun_masuk": tugas.TahunMasuk.TahunMasuk,
+                "status": tugas.TahunMasuk.Status,
+            }
+        } else {
+            tahunMasuk = nil
+        }
 
-	// Create a new submission record
-	pengumpulanTugas := model.PengumpulanTugas{
-		TugasID:     uint(tugasID),
-		KelompokID:  kelompokID,
-		WaktuSubmit: time.Now(),
-		FilePath:    filePath,
-		Status:      "Submitted", // Initial status
-	}
-	log.Printf("Creating new submission: %+v", pengumpulanTugas)
+        var pengumpulanTugas []map[string]interface{}
+        if submission != nil {
+            pengumpulanTugas = []map[string]interface{}{submission}
+        } else {
+            pengumpulanTugas = []map[string]interface{}{}
+        }
 
-	// Save to database
-	if err := config.DB.Create(&pengumpulanTugas).Error; err != nil {
-		log.Printf("Error creating new submission: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Gagal menyimpan data pengumpulan tugas",
-			"error":   err.Error(),
-		})
-		return
-	}
+        item := map[string]interface{}{
+            "id": tugas.ID,
+            "judul_tugas": tugas.JudulTugas,
+            "deskripsi_tugas": tugas.DeskripsiTugas,
+            "tanggal_pengumpulan": tugas.TanggalPengumpulan.Format(time.RFC3339),
+            "file": filePath,
+            "user_id": tugas.UserID,
+            "status": tugas.Status,
+            "kategori_tugas": tugas.KategoriTugas,
+            "kpa_id": tugas.KPAID,
+            "prodi_id": tugas.ProdiID,
+            "tm_id": tugas.TMID,
+            "prodi": map[string]interface{}{
+                "id": tugas.Prodi.ID,
+                "nama_prodi": tugas.Prodi.NamaProdi,
+            },
+            "kategori_pa": kategoriPA,
+            "tahun_masuk": tahunMasuk,
+            "pengumpulan_tugas": pengumpulanTugas,
+        }
+        response = append(response, item)
+    }
 
-	log.Printf("New submission created successfully with ID: %d", pengumpulanTugas.ID)
-	c.JSON(http.StatusCreated, gin.H{
-		"status":  "success",
-		"message": "Tugas berhasil dikumpulkan",
-		"data":    pengumpulanTugas,
-	})
+    // Return the results
+    c.JSON(http.StatusOK, gin.H{
+        "message": "Submitan tugas ditemukan",
+        "data": response,
+    })
 }
 
-// UpdateTugas handles updating an existing submission
-func UpdateTugas(c *gin.Context) {
-	log.Println("UpdateTugas called")
-	
-	// Get the submission ID from the URL parameter
-	id := c.Param("id")
-	log.Printf("Received tugas_id: %s", id)
-	
-	// Get the file from the form
-	file, err := c.FormFile("file")
-	if err != nil {
-		log.Printf("Error getting file from form: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": "File tidak ditemukan dalam request",
-			"error":   err.Error(),
-		})
-		return
-	}
-	log.Printf("Received file: %s, size: %d", file.Filename, file.Size)
+// GetSubmitanTugasById retrieves a specific assignment by ID
+func GetSubmitanTugasById(c *gin.Context) {
+    db := config.DB
 
-	// Validate file type
-	allowedExtensions := []string{".pdf", ".doc", ".docx", ".zip"}
-	ext := filepath.Ext(file.Filename)
-	validExt := false
-	for _, allowedExt := range allowedExtensions {
-		if ext == allowedExt {
-			validExt = true
-			break
-		}
-	}
+    // Get task ID from URL parameter
+    tugasID := c.Param("id")
 
-	if !validExt {
-		log.Printf("Invalid file extension: %s", ext)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": "Format file tidak didukung. Hanya menerima file PDF, DOC, DOCX, atau ZIP",
-		})
-		return
-	}
+    // Get user_id from context
+    userID, exists := c.Get("user_id")
+    if !exists {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID tidak ditemukan"})
+        return
+    }
 
-	// Create uploads directory if it doesn't exist
-	if err := os.MkdirAll("uploads", 0755); err != nil {
-		log.Printf("Error creating uploads directory: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Gagal membuat direktori untuk menyimpan file",
-			"error":   err.Error(),
-		})
-		return
-	}
+    // Find kelompok mahasiswa based on user_id
+    var km model.KelompokMahasiswa
+    if err := db.Where("user_id = ?", userID).First(&km).Error; err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Kelompok tidak ditemukan untuk user"})
+        return
+    }
 
-	// Get kelompok_id from the authenticated user or set a default value
-	var kelompokID uint = 1 // Default value
-	log.Printf("Using kelompok_id: %d", kelompokID)
+    // Get the specific tugas
+    var tugas model.Tugas
+    if err := db.
+        Where("id = ?", tugasID).
+        Preload("Prodi").
+        Preload("KategoriPA").
+        Preload("TahunMasuk").
+        Preload("PengumpulanTugas", "kelompok_id = ?", km.KelompokID).
+        First(&tugas).Error; err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Tugas tidak ditemukan"})
+        return
+    }
 
-	// Find the existing submission
-	var pengumpulan model.PengumpulanTugas
-	if err := config.DB.Where("tugas_id = ? AND kelompok_id = ?", id, kelompokID).First(&pengumpulan).Error; err != nil {
-		log.Printf("No existing submission found, creating new one")
-		// If no submission exists, create a new one
-		tugasID, err := strconv.ParseUint(id, 10, 32)
-		if err != nil {
-			log.Printf("Error parsing tugas_id: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"status":  "error",
-				"message": "ID tugas tidak valid",
-				"error":   err.Error(),
-			})
-			return
-		}
+    // Check if there's a submission for this tugas by this kelompok
+    var submission map[string]interface{} = nil
+    if len(tugas.PengumpulanTugas) > 0 {
+        pengumpulan := tugas.PengumpulanTugas[0]
+        submission = map[string]interface{}{
+            "id": pengumpulan.ID,
+            "kelompok_id": pengumpulan.KelompokID,
+            "tugas_id": pengumpulan.TugasID,
+            "waktu_submit": pengumpulan.WaktuSubmit.Format(time.RFC3339),
+            "file_path": pengumpulan.FilePath,
+            "status": pengumpulan.Status,
+        }
+    }
 
-		// Create a unique filename to prevent overwriting
-		filename := fmt.Sprintf("%d_%s_%s", tugasID, time.Now().Format("20060102150405"), file.Filename)
-		filePath := filepath.Join("uploads", filename)
-		log.Printf("File will be saved to: %s", filePath)
+    // Process file path for Laravel storage if needed
+    filePath := tugas.File
+    if strings.HasPrefix(filePath, "tugas_files/") {
+        // This is a Laravel storage path, keep as is
+    } else if !strings.HasPrefix(filePath, "http") && filePath != "" {
+        // This is a local path, make it accessible via our file proxy
+        filePath = "uploads/" + filePath
+    }
 
-		// Save the file
-		if err := c.SaveUploadedFile(file, filePath); err != nil {
-			log.Printf("Error saving file: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": "Gagal menyimpan file",
-				"error":   err.Error(),
-			})
-			return
-		}
-		log.Printf("File saved successfully")
+    // Replace ternary operators with if-else statements
+    var kategoriPA map[string]interface{}
+    if tugas.KategoriPA.ID > 0 {
+        kategoriPA = map[string]interface{}{
+            "id": tugas.KategoriPA.ID,
+            "kategori_pa": tugas.KategoriPA.KategoriPA,
+        }
+    } else {
+        kategoriPA = nil
+    }
 
-		// Create a new submission
-		newPengumpulan := model.PengumpulanTugas{
-			TugasID:     uint(tugasID),
-			KelompokID:  kelompokID,
-			WaktuSubmit: time.Now(),
-			FilePath:    filePath,
-			Status:      "Submitted",
-		}
-		log.Printf("Creating new submission: %+v", newPengumpulan)
+    var tahunMasuk map[string]interface{}
+    if tugas.TahunMasuk.ID > 0 {
+        tahunMasuk = map[string]interface{}{
+            "id": tugas.TahunMasuk.ID,
+            "tahun_masuk": tugas.TahunMasuk.TahunMasuk,
+            "status": tugas.TahunMasuk.Status,
+        }
+    } else {
+        tahunMasuk = nil
+    }
 
-		if err := config.DB.Create(&newPengumpulan).Error; err != nil {
-			log.Printf("Error creating new submission: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": "Gagal menyimpan data pengumpulan tugas",
-				"error":   err.Error(),
-			})
-			return
-		}
+    var pengumpulanTugas []map[string]interface{}
+    if submission != nil {
+        pengumpulanTugas = []map[string]interface{}{submission}
+    } else {
+        pengumpulanTugas = []map[string]interface{}{}
+    }
 
-		log.Printf("New submission created successfully with ID: %d", newPengumpulan.ID)
-		c.JSON(http.StatusCreated, gin.H{
-			"status":  "success",
-			"message": "Tugas berhasil dikumpulkan",
-			"data":    newPengumpulan,
-		})
-		return
-	}
+    // Format the response
+    response := map[string]interface{}{
+        "id": tugas.ID,
+        "judul_tugas": tugas.JudulTugas,
+        "deskripsi_tugas": tugas.DeskripsiTugas,
+        "tanggal_pengumpulan": tugas.TanggalPengumpulan.Format(time.RFC3339),
+        "file": filePath,
+        "user_id": tugas.UserID,
+        "status": tugas.Status,
+        "kategori_tugas": tugas.KategoriTugas,
+        "kpa_id": tugas.KPAID,
+        "prodi_id": tugas.ProdiID,
+        "tm_id": tugas.TMID,
+        "prodi": map[string]interface{}{
+            "id": tugas.Prodi.ID,
+            "nama_prodi": tugas.Prodi.NamaProdi,
+        },
+        "kategori_pa": kategoriPA,
+        "tahun_masuk": tahunMasuk,
+        "pengumpulan_tugas": pengumpulanTugas,
+    }
 
-	// Create a unique filename to prevent overwriting
-	filename := fmt.Sprintf("%d_%s_%s", pengumpulan.TugasID, time.Now().Format("20060102150405"), file.Filename)
-	filePath := filepath.Join("uploads", filename)
-	log.Printf("File will be saved to: %s", filePath)
-
-	// Save the file
-	if err := c.SaveUploadedFile(file, filePath); err != nil {
-		log.Printf("Error saving file: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Gagal menyimpan file",
-			"error":   err.Error(),
-		})
-		return
-	}
-	log.Printf("File saved successfully")
-
-	// Update the submission record
-	pengumpulan.FilePath = filePath
-	pengumpulan.WaktuSubmit = time.Now()
-	pengumpulan.Status = "Resubmitted" // Update status to indicate it's been resubmitted
-	log.Printf("Updating submission: %+v", pengumpulan)
-
-	// Save to database
-	if err := config.DB.Save(&pengumpulan).Error; err != nil {
-		log.Printf("Error updating submission: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Gagal memperbarui data pengumpulan tugas",
-			"error":   err.Error(),
-		})
-		return
-	}
-
-	log.Printf("Submission updated successfully")
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": "Pengumpulan tugas berhasil diperbarui",
-		"data":    pengumpulan,
-	})
+    // Return the result
+    c.JSON(http.StatusOK, gin.H{
+        "message": "Detail tugas ditemukan",
+        "data": response,
+    })
 }
 
-// GetAllTugas retrieves all tugas assigned by dosen for mahasiswa
-func GetAllTugas(c *gin.Context) {
-	log.Println("GetAllTugas called")
-	
-	var tugas []model.Tugas
-	
-	// Get query parameters for filtering
-	kpaID := c.Query("kpa_id")
-	prodiID := c.Query("prodi_id")
-	tmID := c.Query("tm_id")
-	status := c.Query("status")
-	kategori := c.Query("kategori_tugas")
-	
-	log.Printf("Filters - kpaID: %s, prodiID: %s, tmID: %s, status: %s, kategori: %s", 
-		kpaID, prodiID, tmID, status, kategori)
+// UpdateUploadFileTugas handles updating an already uploaded assignment file
+func UpdateUploadFileTugas(c *gin.Context) {
+    db := config.DB
 
-	// Start building the query
-	query := config.DB.Model(&model.Tugas{}).Preload("Prodi").Preload("KategoriPA").Preload("TahunMasuk").Preload("PengumpulanTugas")
+    // Get tugas ID from URL parameter
+    tugasIDStr := c.Param("id")
+    tugasID, err := strconv.ParseUint(tugasIDStr, 10, 64)
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tugas ID"})
+        return
+    }
 
-	// Apply filters if provided
-	if kpaID != "" {
-		query = query.Where("KPA_id = ?", kpaID)
-	}
-	if prodiID != "" {
-		query = query.Where("prodi_id = ?", prodiID)
-	}
-	if tmID != "" {
-		query = query.Where("TM_id = ?", tmID)
-	}
-	if status != "" {
-		query = query.Where("status = ?", status)
-	}
-	if kategori != "" {
-		query = query.Where("kategori_tugas = ?", kategori)
-	}
+    // Get user_id from context
+    userID, exists := c.Get("user_id")
+    if !exists {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID tidak ditemukan"})
+        return
+    }
 
-	// Execute the query
-	if err := query.Find(&tugas).Error; err != nil {
-		log.Printf("Error fetching tugas: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Gagal mengambil data tugas",
-			"error":   err.Error(),
-		})
-		return
-	}
+    // Find kelompok mahasiswa based on user_id
+    var km model.KelompokMahasiswa
+    if err := db.Where("user_id = ?", userID).First(&km).Error; err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Kelompok tidak ditemukan untuk user"})
+        return
+    }
 
-	log.Printf("Successfully fetched %d tugas", len(tugas))
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": "Data tugas berhasil diambil",
-		"data":    tugas,
-	})
-}
+    // Get file from form
+    file, err := c.FormFile("file")
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "File tidak ditemukan"})
+        return
+    }
 
-// GetTugasById retrieves a specific tugas by ID assigned by dosen
-func GetTugasById(c *gin.Context) {
-	id := c.Param("id")
-	log.Printf("GetTugasById called with id: %s", id)
-	
-	var tugas model.Tugas
+    // Validate file size
+    if file.Size > 100*1024*1024 { // 100MB limit
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file maksimal 100MB"})
+        return
+    }
 
-	// Fetch the tugas made by dosen and related to mahasiswa
-	if err := config.DB.Preload("Prodi").Preload("KategoriPA").Preload("TahunMasuk").Preload("PengumpulanTugas").First(&tugas, id).Error; err != nil {
-		log.Printf("Error fetching tugas with id %s: %v", id, err)
-		c.JSON(http.StatusNotFound, gin.H{
-			"status":  "error",
-			"message": "Tugas tidak ditemukan",
-			"error":   err.Error(),
-		})
-		return
-	}
+    // Check if submission already exists
+    var pengumpulan model.PengumpulanTugas
+    result := db.Where("kelompok_id = ? AND tugas_id = ?", km.KelompokID, tugasID).First(&pengumpulan)
+    
+    // Generate unique filename
+    timestamp := time.Now().Unix()
+    ext := filepath.Ext(file.Filename)
+    filename := fmt.Sprintf("tugas_%d_%d_%d%s", km.KelompokID, tugasID, timestamp, ext)
+    filePath := filepath.Join("uploads", "tugas", filename)
 
-	log.Printf("Successfully fetched tugas with id %s: %s", id, tugas.JudulTugas)
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": "Data tugas berhasil diambil",
-		"data":    tugas,
-	})
-}
+    // Save file to disk
+    if err := c.SaveUploadedFile(file, filePath); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan file"})
+        return
+    }
 
-// GetTugasByKategori retrieves tugas filtered by kategori_tugas
-func GetTugasByKategori(c *gin.Context) {
-	kategori := c.Param("kategori")
-	log.Printf("GetTugasByKategori called with kategori: %s", kategori)
-	
-	var tugas []model.Tugas
+    if result.Error != nil {
+        // Create new submission if it doesn't exist
+        newPengumpulan := model.PengumpulanTugas{
+            KelompokID:  km.KelompokID,
+            TugasID:     uint(tugasID),
+            WaktuSubmit: time.Now(),
+            FilePath:    filePath,
+            Status:      "Submitted",
+        }
 
-	// Make sure we're using the exact case as defined in the enum
-	// The database has 'Tugas', 'Revisi', 'Artefak' as enum values
-	if err := config.DB.Where("kategori_tugas = ?", kategori).
-		Preload("Prodi").Preload("KategoriPA").Preload("TahunMasuk").Preload("PengumpulanTugas").
-		Find(&tugas).Error; err != nil {
-		log.Printf("Error fetching tugas by kategori %s: %v", kategori, err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Gagal mengambil data tugas",
-			"error":   err.Error(),
-		})
-		return
-	}
+        if err := db.Create(&newPengumpulan).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan pengumpulan tugas"})
+            return
+        }
 
-	log.Printf("Successfully fetched %d tugas with kategori %s", len(tugas), kategori)
-	// Log the query results for debugging
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": "Data tugas berhasil diambil",
-		"data":    tugas,
-		"count":   len(tugas),
-		"filter":  kategori,
-	})
-}
+        c.JSON(http.StatusOK, gin.H{
+            "message": "File tugas berhasil dikumpulkan",
+            "data": newPengumpulan,
+        })
+    } else {
+        // Update existing submission
+        pengumpulan.FilePath = filePath
+        pengumpulan.WaktuSubmit = time.Now()
+        pengumpulan.Status = "Resubmitted"
 
-// GetTugasByStatus retrieves tugas filtered by status
-func GetTugasByStatus(c *gin.Context) {
-	status := c.Param("status")
-	log.Printf("GetTugasByStatus called with status: %s", status)
-	
-	var tugas []model.Tugas
+        if err := db.Save(&pengumpulan).Error; err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memperbarui pengumpulan tugas"})
+            return
+        }
 
-	if err := config.DB.Where("status = ?", status).
-		Preload("Prodi").Preload("KategoriPA").Preload("TahunMasuk").Preload("PengumpulanTugas").
-		Find(&tugas).Error; err != nil {
-		log.Printf("Error fetching tugas by status %s: %v", status, err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Gagal mengambil data tugas",
-			"error":   err.Error(),
-		})
-		return
-	}
-
-	log.Printf("Successfully fetched %d tugas with status %s", len(tugas), status)
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": "Data tugas berhasil diambil",
-		"data":    tugas,
-	})
-}
-
-// GetTugasByProdi retrieves tugas filtered by prodi_id
-func GetTugasByProdi(c *gin.Context) {
-	prodiID := c.Param("prodi_id")
-	log.Printf("GetTugasByProdi called with prodi_id: %s", prodiID)
-	
-	var tugas []model.Tugas
-
-	if err := config.DB.Where("prodi_id = ?", prodiID).
-		Preload("Prodi").Preload("KategoriPA").Preload("TahunMasuk").Preload("PengumpulanTugas").
-		Find(&tugas).Error; err != nil {
-		log.Printf("Error fetching tugas by prodi_id %s: %v", prodiID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Gagal mengambil data tugas",
-			"error":   err.Error(),
-		})
-		return
-	}
-
-	log.Printf("Successfully fetched %d tugas with prodi_id %s", len(tugas), prodiID)
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": "Data tugas berhasil diambil",
-		"data":    tugas,
-	})
+        c.JSON(http.StatusOK, gin.H{
+            "message": "File tugas berhasil diperbarui",
+            "data": pengumpulan,
+        })
+    }
 }

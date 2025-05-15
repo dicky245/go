@@ -20,7 +20,7 @@ type Tugas struct {
     // Relasi
     Prodi             Prodi           `gorm:"foreignKey:ProdiID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"prodi,omitempty"`
     KategoriPA        KategoriPA      `gorm:"foreignKey:KPAID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"kategori_pa,omitempty"`
-    TahunMasuk        TahunAjaran      `gorm:"foreignKey:TMID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"tahun_masuk,omitempty"`
+    TahunMasuk        Tahun_Masuk      `gorm:"foreignKey:TMID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"tahun_masuk,omitempty"`
     
     PengumpulanTugas  []PengumpulanTugas `gorm:"foreignKey:TugasID" json:"pengumpulan_tugas,omitempty"`
 }
