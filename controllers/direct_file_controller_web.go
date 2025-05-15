@@ -13,6 +13,7 @@ import (
 
 // Configuration for direct file access
 const (
+	
 	// Update this to the actual path to your Laravel storage directory
 	LaravelStoragePath = "D:/Semester 4/PA II/vokasiteraweb/storage/app/public/"
 )

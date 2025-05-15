@@ -47,16 +47,17 @@ func GetSubmitanTugas(c *gin.Context) {
 
     // Query for tugas using the values from the user's kelompok
     var tugasList []model.Tugas
-    if err := db.Debug().
-        Where("prodi_id = ? AND TM_id = ?", kelompok.ProdiID, kelompok.TMID).
-        Preload("Prodi").
-        Preload("KategoriPA").
-        Preload("TahunMasuk").
-        Preload("PengumpulanTugas", "kelompok_id = ?", km.KelompokID).
-        Find(&tugasList).Error; err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-        return
-    }
+if err := db.Debug().
+    Where(`"prodi_id" = ? AND "TM_id" = ?`, kelompok.ProdiID, kelompok.TMID).
+    Preload("Prodi").
+    Preload("KategoriPA").
+    Preload("TahunMasuk").
+    Preload("PengumpulanTugas", "kelompok_id = ?", km.KelompokID).
+    Find(&tugasList).Error; err != nil {
+    c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+    return
+}
+
 
     fmt.Printf("Found %d tugas\n", len(tugasList))
 
@@ -126,7 +127,7 @@ func GetSubmitanTugas(c *gin.Context) {
             "kategori_tugas": tugas.KategoriTugas,
             "kpa_id": tugas.KPAID,
             "prodi_id": tugas.ProdiID,
-            "tm_id": tugas.TMID,
+            "TM_id": tugas.TMID,
             "prodi": map[string]interface{}{
                 "id": tugas.Prodi.ID,
                 "nama_prodi": tugas.Prodi.NamaProdi,
@@ -243,7 +244,7 @@ func GetSubmitanTugasById(c *gin.Context) {
         "kategori_tugas": tugas.KategoriTugas,
         "kpa_id": tugas.KPAID,
         "prodi_id": tugas.ProdiID,
-        "tm_id": tugas.TMID,
+        "TM_id": tugas.TMID,
         "prodi": map[string]interface{}{
             "id": tugas.Prodi.ID,
             "nama_prodi": tugas.Prodi.NamaProdi,
