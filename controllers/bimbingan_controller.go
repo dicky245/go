@@ -2,17 +2,16 @@ package controllers
 
 import (
 	"net/http"
+	"time"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rudychandra/lagi/config"
 	"github.com/rudychandra/lagi/model"
-
-	"time"
-	"fmt"
 )
 
 // Ambil semua bimbingan milik user (berdasarkan token)
-	func GetBimbingan(c *gin.Context) {
+func GetBimbingan(c *gin.Context) {
 	userIDInterface, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user_id tidak ditemukan di token"})
@@ -21,66 +20,89 @@ import (
 
 	userID := userIDInterface.(uint)
 
-	// Cari data kelompok_id dari tabel kelompok_mahasiswa berdasarkan user_id
 	var km model.KelompokMahasiswa
 	if err := config.DB.Where("user_id = ?", userID).First(&km).Error; err != nil {
-		// Return a more friendly error with a specific status code for "no group" case
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Mahasiswa belum memiliki kelompok",
-			"status": "no_group",
-			"data": []map[string]interface{}{},
+			"status":  "no_group",
+			"data":    []map[string]interface{}{},
 		})
 		return
 	}
 
-	// Gunakan km.KelompokID untuk cari semua bimbingan
 	var bimbingans []model.Bimbingan
 	if err := config.DB.
 		Where("kelompok_id = ?", km.KelompokID).
 		Preload("Kelompok").
+		Preload("Ruangan"). // preload ruangan juga
 		Find(&bimbingans).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data bimbingan"})
 		return
 	}
-	
+
+	// Debug: Print time values
+	for i, b := range bimbingans {
+		fmt.Printf("Bimbingan %d - RencanaMulai: %v, RencanaSelesai: %v\n", 
+			b.ID, b.RencanaMulai, b.RencanaSelesai)
+		
+		// Ensure times are in UTC when sent to client
+		// The client will handle conversion to local time
+		if !b.RencanaMulai.IsZero() {
+			bimbingans[i].RencanaMulai = b.RencanaMulai.UTC()
+		}
+		if !b.RencanaSelesai.IsZero() {
+			bimbingans[i].RencanaSelesai = b.RencanaSelesai.UTC()
+		}
+		if !b.CreatedAt.IsZero() {
+			bimbingans[i].CreatedAt = b.CreatedAt.UTC()
+		}
+		if !b.UpdatedAt.IsZero() {
+			bimbingans[i].UpdatedAt = b.UpdatedAt.UTC()
+		}
+		
+		fmt.Printf("After UTC conversion - RencanaMulai: %v, RencanaSelesai: %v\n", 
+			bimbingans[i].RencanaMulai, bimbingans[i].RencanaSelesai)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Data bimbingan berhasil diambil",
-		"status": "success",
-		"data": bimbingans,
+		"status":  "success",
+		"data":    bimbingans,
 	})
 }
 
 // Tambah request bimbingan (hanya mahasiswa)
 func CreateBimbingan(c *gin.Context) {
-	// Ambil user_id dari token
 	userID := c.MustGet("user_id").(uint)
 
-	// Ambil kelompok_id dari user_id
 	var km model.KelompokMahasiswa
 	if err := config.DB.Where("user_id = ?", userID).First(&km).Error; err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Mahasiswa belum tergabung dalam kelompok",
-			"status": "no_group",
+			"status":  "no_group",
 		})
 		return
 	}
 
-	// Bind request body ke struct Bimbingan
 	var req model.Bimbingan
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fmt.Println("BindJSON error:", err.Error()) // <--- tambahkan ini
+		fmt.Println("BindJSON error:", err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	
-	// Set user_id dan kelompok_id pada permintaan bimbingan
+
+	// Debug: Print received time values
+	fmt.Printf("Received RencanaMulai: %v\n", req.RencanaMulai)
+	fmt.Printf("Received RencanaSelesai: %v\n", req.RencanaSelesai)
+
+	// Ensure times are stored as UTC in the database
+	// The client should already be sending UTC times
 	req.UserID = userID
 	req.KelompokID = km.KelompokID
-	req.Status = "menunggu" // default status
-	req.CreatedAt = time.Now()
-	req.UpdatedAt = time.Now()
+	req.Status = "menunggu"
+	req.CreatedAt = time.Now().UTC()
+	req.UpdatedAt = time.Now().UTC()
 
-	// Simpan bimbingan ke database
 	if err := config.DB.Create(&req).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to create bimbingan",
@@ -89,10 +111,13 @@ func CreateBimbingan(c *gin.Context) {
 		return
 	}
 
-	// Kembalikan response
+	// Debug: Print stored time values
+	fmt.Printf("Stored RencanaMulai: %v\n", req.RencanaMulai)
+	fmt.Printf("Stored RencanaSelesai: %v\n", req.RencanaSelesai)
+
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Bimbingan berhasil dibuat",
-		"status": "success",
-		"data": req,
+		"status":  "success",
+		"data":    req,
 	})
 }
