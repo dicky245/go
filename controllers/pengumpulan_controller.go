@@ -15,8 +15,6 @@ import (
 
 // GetSubmitanTugas retrieves assignments based on user's group
 func GetSubmitanTugas(c *gin.Context) {
-    db := config.DB
-
     // Get user_id from context
     userID, exists := c.Get("user_id")
     if !exists {
@@ -26,13 +24,24 @@ func GetSubmitanTugas(c *gin.Context) {
 
     fmt.Printf("User ID: %v\n", userID)
 
+    // Get database connection with nil check
+    db, err := config.GetDB()
+    if err != nil {
+        c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database connection not available"})
+        return
+    }
+
     // Find kelompok mahasiswa based on user_id WITH PRELOADED KELOMPOK
     var km model.KelompokMahasiswa
     if err := db.Debug().
         Where("user_id = ?", userID).
         Preload("Kelompok").
         First(&km).Error; err != nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Kelompok tidak ditemukan untuk user"})
+        c.JSON(http.StatusOK, gin.H{
+            "status": "success",
+            "data": []interface{}{}, // Return empty array, not null
+            "message": "Kelompok tidak ditemukan untuk user",
+        })
         return
     }
 
@@ -47,19 +56,28 @@ func GetSubmitanTugas(c *gin.Context) {
 
     // Query for tugas using the values from the user's kelompok
     var tugasList []model.Tugas
-if err := db.Debug().
-    Where(`"prodi_id" = ? AND "TM_id" = ?`, kelompok.ProdiID, kelompok.TMID).
-    Preload("Prodi").
-    Preload("KategoriPA").
-    Preload("TahunMasuk").
-    Preload("PengumpulanTugas", "kelompok_id = ?", km.KelompokID).
-    Find(&tugasList).Error; err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-    return
-}
-
+    if err := db.Debug().
+        Where("prodi_id = ? AND TM_id = ?", kelompok.ProdiID, kelompok.TMID).
+        Preload("Prodi").
+        Preload("KategoriPA").
+        Preload("TahunMasuk").
+        Preload("PengumpulanTugas", "kelompok_id = ?", km.KelompokID).
+        Find(&tugasList).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
 
     fmt.Printf("Found %d tugas\n", len(tugasList))
+
+    // If no tugas found, return empty array
+    if len(tugasList) == 0 {
+        c.JSON(http.StatusOK, gin.H{
+            "status": "success",
+            "data": []interface{}{}, // Return empty array, not null
+            "message": "Submitan tugas ditemukan",
+        })
+        return
+    }
 
     // Format the response to match what the Flutter app expects
     var response []map[string]interface{}
@@ -146,10 +164,8 @@ if err := db.Debug().
     })
 }
 
-// GetSubmitanTugasById retrieves a specific assignment by ID
-func GetSubmitanTugasById(c *gin.Context) {
-    db := config.DB
-
+// GetSubmitanTugasByID retrieves a specific assignment by ID
+func GetSubmitanTugasByID(c *gin.Context) {
     // Get task ID from URL parameter
     tugasID := c.Param("id")
 
@@ -160,9 +176,16 @@ func GetSubmitanTugasById(c *gin.Context) {
         return
     }
 
+    // Get database connection with nil check
+    db, err := config.GetDB()
+    if err != nil {
+        c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database connection not available"})
+        return
+    }
+
     // Find kelompok mahasiswa based on user_id
     var km model.KelompokMahasiswa
-    if err := db.Where("user_id = ?", userID).First(&km).Error; err != nil {
+    if err := db.Where("user_id = ?", userID).Preload("Kelompok").First(&km).Error; err != nil {
         c.JSON(http.StatusNotFound, gin.H{"error": "Kelompok tidak ditemukan untuk user"})
         return
     }
@@ -263,7 +286,12 @@ func GetSubmitanTugasById(c *gin.Context) {
 
 // UpdateUploadFileTugas handles updating an already uploaded assignment file
 func UpdateUploadFileTugas(c *gin.Context) {
-    db := config.DB
+    // Get database connection with nil check
+    db, err := config.GetDB()
+    if err != nil {
+        c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database connection not available"})
+        return
+    }
 
     // Get tugas ID from URL parameter
     tugasIDStr := c.Param("id")

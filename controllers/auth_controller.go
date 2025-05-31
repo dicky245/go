@@ -8,15 +8,17 @@ import (
 	"mime/multipart"
 	"net/http"
 
-	"github.com/rudychandra/lagi/utils"
-
 	"github.com/gin-gonic/gin"
+	"github.com/rudychandra/lagi/config"
+	"github.com/rudychandra/lagi/model"
+	"github.com/rudychandra/lagi/utils"
 )
 
 // Struktur untuk request login
 type LoginRequest struct {
-	Username string `form:"username" binding:"required"`
-	Password string `form:"password" binding:"required"`
+	Username    string `form:"username" binding:"required"`
+	Password    string `form:"password" binding:"required"`
+	DeviceToken string `form:"device_token"` // FCM device token (optional)
 }
 
 // Struktur response dari API eksternal (CIS)
@@ -99,6 +101,14 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// Save device token if provided (otomatis saat login)
+	if loginReq.DeviceToken != "" {
+		go func() {
+			// Run in goroutine to not block login response
+			saveDeviceTokenForUser(loginRes.User.UserID, loginReq.DeviceToken)
+		}()
+	}
+
 	// Response sukses
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "Login berhasil",
@@ -111,4 +121,37 @@ func Login(c *gin.Context) {
 			"role":     loginRes.User.Role,
 		},
 	})
+}
+
+// saveDeviceTokenForUser automatically saves or updates device token for user
+func saveDeviceTokenForUser(userID int, deviceToken string) {
+	db, err := config.GetDB()
+	if err != nil {
+		fmt.Printf("Failed to get database connection: %v\n", err)
+		return
+	}
+
+	var existingToken model.Device_Token
+	result := db.Where("user_id = ?", userID).First(&existingToken)
+
+	if result.Error != nil {
+		// Create new device token
+		newDeviceToken := model.Device_Token{
+			UserID:      userID,
+			TokenDevice: deviceToken,
+		}
+		if err := db.Create(&newDeviceToken).Error; err != nil {
+			fmt.Printf("Failed to create device token for user %d: %v\n", userID, err)
+		} else {
+			fmt.Printf("Device token created for user %d\n", userID)
+		}
+	} else {
+		// Update existing device token
+		existingToken.TokenDevice = deviceToken
+		if err := db.Save(&existingToken).Error; err != nil {
+			fmt.Printf("Failed to update device token for user %d: %v\n", userID, err)
+		} else {
+			fmt.Printf("Device token updated for user %d\n", userID)
+		}
+	}
 }

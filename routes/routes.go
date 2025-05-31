@@ -3,7 +3,7 @@ package routes
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/rudychandra/lagi/controllers"
-	middleware "github.com/rudychandra/lagi/middlewares"
+	"github.com/rudychandra/lagi/middlewares"
 )
 
 func SetupRouter(r *gin.Engine) {
@@ -20,6 +20,14 @@ func SetupRouter(r *gin.Engine) {
 
 	// --- Ruangan (Tanpa Auth, untuk dropdown) ---
 	r.GET("/ruangans", controllers.GetRuangans)
+	// --- Device Token Management (Authenticated user only) ---
+	deviceToken := r.Group("/device-token")
+	deviceToken.Use(middleware.InternalAuthMiddleware())
+	{
+		deviceToken.GET("/", controllers.GetDeviceToken)       // Get user's device token
+		deviceToken.POST("/", controllers.SaveDeviceToken)    // Save/Update user's device token
+		deviceToken.DELETE("/", controllers.DeleteDeviceToken) // Delete user's device token
+	}
 
 	// --- API / Protected Routes (Authenticated user) ---
 	api := r.Group("/api")
@@ -58,8 +66,21 @@ func SetupRouter(r *gin.Engine) {
 		jadwal.GET("/ruangan", controllers.GetRuangan) // Opsional/alternatif endpoint
 	}
 
+	device := r.Group("/device")
+	{
+		device.POST("/", controllers.CreateUser)
+	}
+
+	// --- Laravel Integration ---
+	// This endpoint doesn't require authentication as it's called from Laravel
+
+	// --- Device Token Management ---
+	// deviceToken := r.Group("/device-token")
+	// deviceToken.Use(middleware.InternalAuthMiddleware())
+	// {
+	// }
+
 	// --- Pengumpulan Tugas ---
-	// Use the dedicated setup function for pengumpulan routes
 	SetupPengumpulanRoutes(r)
 
 	// --- Tugas Management ---
@@ -68,9 +89,11 @@ func SetupRouter(r *gin.Engine) {
 	// --- Role Management ---
 	RoleRoutes(r)
 	DosenRoleRoutes(r)
-	SetupFileRoutes(r) // Add this line to include file routes
+	SetupFileRoutes(r)
+	notificationHandler(r)
 }
 
+// Rest of your route setup functions...
 // SetupPengumpulanRoutes configures all routes related to assignment submissions
 func SetupPengumpulanRoutes(r *gin.Engine) {
 	pengumpulan := r.Group("/pengumpulan")
@@ -78,14 +101,14 @@ func SetupPengumpulanRoutes(r *gin.Engine) {
 	{
 		// Get all tugas for mahasiswa
 		pengumpulan.GET("/", controllers.GetSubmitanTugas)
-		
+
 		// Get specific tugas by ID
-		pengumpulan.GET("/:id", controllers.GetSubmitanTugasById)
-		
+		pengumpulan.GET("/:id", controllers.GetSubmitanTugasByID)
+
 		// Create a new submission for an assignment
 		pengumpulan.POST("/:id/upload", controllers.UpdateUploadFileTugas)
-		
-		// Update an existing submission - Add this missing route
+
+		// Update an existing submission 	- Add this missing route
 		pengumpulan.PUT("/:id/upload", controllers.UpdateUploadFileTugas)
 	}
 }
@@ -94,8 +117,8 @@ func TugasRoutes(r *gin.Engine) {
 	tugasGroup := r.Group("/tugas")
 	tugasGroup.Use(middleware.InternalAuthMiddleware()) // Using the same auth middleware as other routes
 	{
-		tugasGroup.GET("/", controllers.GetSubmitanTugas)             // Get all tugas for mahasiswa
-		tugasGroup.GET("/:id", controllers.GetSubmitanTugasById)         // Get specific tugas by ID
+		tugasGroup.GET("/", controllers.GetSubmitanTugas)        // Get all tugas for mahasiswa
+		tugasGroup.GET("/:id", controllers.GetSubmitanTugasByID) // Get specific tugas by ID
 	}
 }
 
@@ -121,6 +144,7 @@ func DosenRoleRoutes(r *gin.Engine) {
 		roleGroup.GET("/:id", controllers.GetDosenRolesByid)
 	}
 }
+
 // Add this to your SetupFileRoutes function
 func SetupFileRoutes(r *gin.Engine) {
 	// Web file routes (Laravel storage proxy)
@@ -128,10 +152,10 @@ func SetupFileRoutes(r *gin.Engine) {
 	{
 		// View file (proxies to Laravel storage)
 		webFiles.GET("/view/*path", controllers.ProxyFile)
-		
+
 		// Download file (with attachment header)
 		webFiles.GET("/download/*path", controllers.DownloadFile)
-		
+
 		// Debug endpoint
 		webFiles.GET("/debug", controllers.DebugFileAccess)
 		webFiles.GET("/test", controllers.TestLaravelStorage)
@@ -142,13 +166,13 @@ func SetupFileRoutes(r *gin.Engine) {
 	{
 		// View file directly from filesystem
 		mobileFiles.GET("/view/*path", controllers.MobileFileView)
-		
+
 		// Download file directly from filesystem
 		mobileFiles.GET("/download/*path", controllers.MobileFileDownload)
-		
+
 		// Test endpoint
 		mobileFiles.GET("/test", controllers.MobileTestFileAccess)
-		
+
 		// List files in directory
 		mobileFiles.GET("/list", controllers.ListMobileFiles)
 	}
@@ -161,5 +185,24 @@ func SetupFileRoutes(r *gin.Engine) {
 		// that require authentication
 		protectedFiles.GET("/view/*path", controllers.ProxyFile)
 		protectedFiles.GET("/download/*path", controllers.DownloadFile)
+	}
+}
+
+func SetupNotificationRoutes(r *gin.Engine) {
+	// Device token management
+	deviceToken := r.Group("/device-token")
+	deviceToken.Use(middleware.InternalAuthMiddleware())
+	{
+		// Store device token for FCM
+	}
+
+}
+func notificationHandler(r *gin.Engine) {
+	// --- Notification Routes ---
+	notification := r.Group("/send-notification")
+	// notification.Use(middleware.InternalAuthMiddleware())
+	{
+		notification.POST("", controllers.SendNotification) // Send to specific user
+		// notification.POST("/send-all", controllers.SendNotificationToAll)       // Send to all users
 	}
 }

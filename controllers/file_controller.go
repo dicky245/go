@@ -15,7 +15,7 @@ import (
 
 // Configuration for Laravel storage
 const (
-	LaravelBaseURL  = "https://vokasitera-main-ltziwn.laravel.cloud" // Your Laravel app URL
+	LaravelBaseURL  = "https://vokasitera.d4trpl-itdel.id/" // Your Laravel app URL
 	StorageBasePath = "storage/"              // Laravel's public storage path
 )
 
@@ -209,11 +209,11 @@ func DownloadFile(c *gin.Context) {
 func TestLaravelStorage(c *gin.Context) {
 	// Test different URLs to find which one works
 	testURLs := []string{
-		fmt.Sprintf("%s/%stugas_files/Dtg7lUEjFMb0B5ur7jCQKrWPA0FEMAfMXN5txfS9.pdf", LaravelBaseURL, StorageBasePath),
-		fmt.Sprintf("%s/storage/tugas_files/Dtg7lUEjFMb0B5ur7jCQKrWPA0FEMAfMXN5txfS9.pdf", LaravelBaseURL),
+		fmt.Sprintf("%s/%stugas_files/fXkQGaW2OEH3s0So7IKGVPNBieHCaF9x5UdGwR5Q.pdf", LaravelBaseURL, StorageBasePath),
+		fmt.Sprintf("%s/storage/fXkQGaW2OEH3s0So7IKGVPNBieHCaF9x5UdGwR5Q.pdf", LaravelBaseURL),
 		fmt.Sprintf("%s/public/storage/tugas_files/Dtg7lUEjFMb0B5ur7jCQKrWPA0FEMAfMXN5txfS9.pdf", LaravelBaseURL),
 		// Try with IP address instead of localhost
-		"https://vokasitera-main-ltziwn.laravel.cloud/storage/tugas_files/Dtg7lUEjFMb0B5ur7jCQKrWPA0FEMAfMXN5txfS9.pdf",
+		"https://vokasitera.d4trpl-itdel.id/storage/tugas_files/fXkQGaW2OEH3s0So7IKGVPNBieHCaF9x5UdGwR5Q.pdf",
 		// Try with your machine's actual IP address
 		// Replace 192.168.1.100 with your actual IP address
 		// "http://192.168.1.100:8000/storage/tugas_files/xTP3hxTxPwmeU6O9wJuxCLbIJbFAfapwstSljFmV.pdf",

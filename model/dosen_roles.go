@@ -12,4 +12,5 @@ type DosenRole struct {
 
 func (DosenRole) TableName() string {
     return "dosen_roles"
+	
 }

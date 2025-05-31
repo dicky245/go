@@ -12,6 +12,7 @@ import (
 func main() {
 	// Inisialisasi koneksi ke database dan memuat konfigurasi
 	config.Connect()
+	config.InitFirebase()
 
 	// Set up Gin router
 	r := gin.Default()

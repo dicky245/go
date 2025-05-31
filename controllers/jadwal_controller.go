@@ -22,9 +22,15 @@ func GetJadwal(c *gin.Context) {
 
 	fmt.Printf("GetJadwal called for user ID: %v\n", userID)
 
+	// Get database connection with nil check
+	db, err := config.GetDB()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database connection not available"})
+		return
+	}
+
 	// Find the user's kelompok
 	var kelompokMahasiswa []model.KelompokMahasiswa
-	db := config.DB
 
 	if err := db.Where("user_id = ?", userID).Find(&kelompokMahasiswa).Error; err != nil {
 		fmt.Printf("Error fetching kelompok for user %v: %v\n", userID, err)
@@ -140,9 +146,15 @@ func GetJadwalByID(c *gin.Context) {
 
 	fmt.Printf("GetJadwalByID called for user %v, jadwal ID %v\n", userID, jadwalID)
 
+	// Get database connection with nil check
+	db, err := config.GetDB()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database connection not available"})
+		return
+	}
+
 	// Find the user's kelompok
 	var kelompokMahasiswa []model.KelompokMahasiswa
-	db := config.DB
 
 	if err := db.Where("user_id = ?", userID).Find(&kelompokMahasiswa).Error; err != nil {
 		fmt.Printf("Error fetching kelompok for user %v: %v\n", userID, err)
@@ -231,8 +243,14 @@ func GetJadwalByID(c *gin.Context) {
 
 // GetRuangan retrieves all available ruangan (rooms)
 func GetRuangan(c *gin.Context) {
+	// Get database connection with nil check
+	db, err := config.GetDB()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database connection not available"})
+		return
+	}
+
 	var ruangan []model.Ruangan
-	db := config.DB
 
 	if err := db.Order("ruangan").Find(&ruangan).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch ruangan"})
@@ -270,9 +288,15 @@ func CreateJadwal(c *gin.Context) {
 		return
 	}
 
+	// Get database connection with nil check
+	db, err := config.GetDB()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database connection not available"})
+		return
+	}
+
 	// Check if the kelompok exists
 	var kelompok model.Kelompok
-	db := config.DB
 	if err := db.First(&kelompok, request.KelompokID).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Kelompok not found"})
 		return
